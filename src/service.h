@@ -1,6 +1,10 @@
 #ifndef ltask_service_h
 #define ltask_service_h
 
+#include <stddef.h>
+
+#define LTASK_KEY "LTASK_ID"
+
 #define SERVICE_ID_SYSTEM 0
 #define SERVICE_ID_ROOT 1
 
@@ -25,14 +29,18 @@ struct service_pool * service_create(struct ltask_config *config);
 void service_destory(struct service_pool *p);
 service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
-int service_init(struct service_pool *p, service_id id);
+int service_init(struct service_pool *p, service_id id, void *ud, size_t sz);
 void service_delete(struct service_pool *p, service_id id);
 const char * service_load(struct service_pool *p, service_id id, const char *filename);
-void service_resume(struct service_pool *p, service_id id);
+// 0 yield , 1 term or error
+int service_resume(struct service_pool *p, service_id id);
 // 0 succ, 1 blocked, -1 not exist
-int service_message(struct service_pool *p, service_id id, struct message *msg);
+int service_push_message(struct service_pool *p, service_id id, struct message *msg);
+struct message * service_pop_message(struct service_pool *p, service_id id);
 int service_status_get(struct service_pool *p, service_id id);
 void service_status_set(struct service_pool *p, service_id id, int status);
+// 0 succ
+int service_send_message(struct service_pool *p, service_id id, struct message *msg);
 struct message * service_message_out(struct service_pool *p, service_id id);
 void service_message_resp(struct service_pool *p, service_id id, struct message *resp);
 int service_message_count(struct service_pool *p, service_id id);

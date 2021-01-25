@@ -76,6 +76,10 @@ int luaopen_ltask(lua_State *L);
 
 static int
 init_service(lua_State *L) {
+	void *ud = lua_touserdata(L, 1);
+	int sz = lua_tointeger(L, 2);
+	lua_pushlstring(L, (const char *)ud, sz);
+	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
 	luaL_openlibs(L);
 	luaL_requiref(L, "ltask", luaopen_ltask, 1);
 	return 0;
@@ -129,14 +133,16 @@ get_service(struct service_pool *p, service_id id) {
 }
 
 int
-service_init(struct service_pool *p, service_id id) {
+service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
 	lua_State *L = luaL_newstate();
 	if (L == NULL)
 		return 1;
+	lua_pushlightuserdata(L, ud);
+	lua_pushinteger(L, sz);
 	lua_pushcfunction(L, init_service);
-	if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
 		lua_close(L);
 		return 1;
 	}
@@ -179,16 +185,21 @@ service_load(struct service_pool *p, service_id id, const char *filename) {
 	return NULL;
 }
 
-void
+int
 service_resume(struct service_pool *p, service_id id) {
 	lua_State *L = service_L(p, id);
 	int nresults = 0;
 	int r = lua_resume(L, NULL, 0, &nresults);
-	assert(r == LUA_YIELD && nresults == 0);
+	if (r == LUA_YIELD) {
+		assert(nresults == 0);
+		return 0;
+	}
+	// term or error
+	return 1;
 }
 
 int
-service_message(struct service_pool *p, service_id id, struct message *msg) {
+service_push_message(struct service_pool *p, service_id id, struct message *msg) {
 	struct service *s = get_service(p, id);
 	if (s == NULL)
 		return -1;
@@ -226,11 +237,33 @@ service_message_out(struct service_pool *p, service_id id) {
 	return r;
 }
 
+int
+service_send_message(struct service_pool *p, service_id id, struct message *msg) {
+	struct service *s = get_service(p, id);
+	if (s == NULL || s->out != NULL)
+		return 1;
+	s->out = msg;
+	return 0;
+}
+
 void
 service_message_resp(struct service_pool *p, service_id id, struct message *resp) {
 	struct service *s = get_service(p, id);
 	assert (s != NULL && s->resp == NULL);
 	s->resp = resp;
+}
+
+struct message *
+service_pop_message(struct service_pool *p, service_id id) {
+	struct service *s = get_service(p, id);
+	if (s == NULL)
+		return NULL;
+	if (s->resp) {
+		struct message *r = s->resp;
+		s->resp = NULL;
+		return r;
+	}
+	return queue_pop_ptr(s->msg);
 }
 
 int
@@ -245,8 +278,4 @@ service_message_count(struct service_pool *p, service_id id) {
 	count += queue_length(s->msg);
 	return count;
 }
-
-
-
-
 
