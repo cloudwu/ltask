@@ -18,20 +18,6 @@ config_getint(lua_State *L, int index, const char *key, int opt) {
 	return r;
 }
 
-static const char *
-config_getstring(lua_State *L, int index, const char *key) {
-	int t = lua_getfield(L, index, key);
-	if (t == LUA_TNIL) {
-		lua_pop(L, 1);
-		return NULL;
-	}
-	if (t != LUA_TSTRING) {
-		luaL_error(L, ".%s should be a string", key);
-		return NULL;
-	}
-	return lua_tostring(L, -1);
-}
-
 static inline int
 align_pow2(int x) {
 	int r = 1;
@@ -68,18 +54,5 @@ config_load(lua_State *L, int index, struct ltask_config *config) {
 	lua_setfield(L, -2, "queue");
 	lua_pushinteger(L, config->max_service);
 	lua_setfield(L, -2, "max_service");
-
-	config->service = config_getstring(L, index, "service");
-	if (config->service == NULL) {
-		luaL_error(L, "Need .service as a lua filename");
-		return;
-	}
-	lua_setfield(L, -2, "service");
-	config->root = config_getstring(L, index, "root");
-	if (config->root == NULL) {
-		luaL_error(L, "Need .root as a lua filename");
-		return;
-	}
-	lua_setfield(L, -2, "root");
 }
 

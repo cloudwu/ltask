@@ -12,6 +12,8 @@ message_new(struct message *msg) {
 
 void
 message_delete(struct message *msg) {
-	free(msg->msg);
-	free(msg);
+	if (msg) {
+		free(msg->msg);
+		free(msg);
+	}
 }

@@ -14,6 +14,7 @@ struct worker_thread {
 	atomic_int service_ready;
 	atomic_int service_done;
 	int term_signal;
+	int sleeping;
 	struct thread_event trigger;
 };
 
@@ -26,6 +27,23 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	thread_event_create(&worker->trigger);
 	worker->running.id = 0;
 	worker->term_signal = 0;
+	worker->sleeping = 0;
+}
+
+static inline void
+worker_sleep(struct worker_thread *w) {
+	w->sleeping = 1;
+	thread_event_wait(&w->trigger);
+	w->sleeping = 0;
+}
+
+static inline int
+worker_wakeup(struct worker_thread *w) {
+	if (w->sleeping) {
+		thread_event_trigger(&w->trigger);
+		return 1;
+	}
+	return 0;
 }
 
 static inline void

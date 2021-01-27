@@ -14,7 +14,7 @@ struct queue {
 
 static inline int *
 queue_int(struct queue *q) {
-	return (int *)(q->data[0]);
+	return (int *)(&q->data[0]);
 }
 
 static inline void **
@@ -122,7 +122,7 @@ void *
 queue_pop_ptr(struct queue *q) {
 	int head = queue_pop_open(q);
 	if (head < 0)
-		return 0;
+		return NULL;
 	void **data = queue_ptr(q);
 	void *v = data[head];
 	queue_pop_close(q, head);

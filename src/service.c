@@ -9,6 +9,7 @@
 
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 // test whether an unsigned value is a power of 2 (or zero)
 #define ispow2(x)	(((x) & ((x) - 1)) == 0)
@@ -17,9 +18,10 @@ struct service {
 	lua_State *L;
 	struct queue *msg;
 	struct message *out;
-	struct message *resp;
-	service_id id;
+	struct message *bounce;
 	int status;
+	int receipt;
+	service_id id;
 };
 
 struct service_pool {
@@ -52,9 +54,19 @@ static void
 free_service(struct service *S) {
 	if (S->L != NULL)
 		lua_close(S->L);
-	queue_delete(S->msg);
+	if (S->msg) {
+		for (;;) {
+			struct message *m = queue_pop_ptr(S->msg);
+			if (m) {
+				message_delete(m);
+			} else {
+				break;
+			}
+		}
+		queue_delete(S->msg);
+	}
 	message_delete(S->out);
-	message_delete(S->resp);
+	message_delete(S->bounce);
 }
 
 void
@@ -116,7 +128,8 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->L = NULL;
 	s->msg = NULL;
 	s->out = NULL;
-	s->resp = NULL;
+	s->bounce = NULL;
+	s->receipt = MESSAGE_RECEIPT_NONE;
 	s->id.id = id;
 	s->status = SERVICE_STATUS_UNINITIALIZED;
 	*service_slot(p, id) = s;
@@ -139,9 +152,9 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	lua_State *L = luaL_newstate();
 	if (L == NULL)
 		return 1;
+	lua_pushcfunction(L, init_service);
 	lua_pushlightuserdata(L, ud);
 	lua_pushinteger(L, sz);
-	lua_pushcfunction(L, init_service);
 	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
 		lua_close(L);
 		return 1;
@@ -152,16 +165,26 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 		return 1;
 	}
 	S->L = L;
-	S->status = SERVICE_STATUS_IDLE;
 	return 0;
+}
+
+void 
+service_close(struct service_pool *p, service_id id) {
+	struct service * s = get_service(p, id);
+	if (s && s->L) {
+		lua_close(s->L);
+		s->L = NULL;
+	}
+	s->status = SERVICE_STATUS_DEAD;
 }
 
 void
 service_delete(struct service_pool *p, service_id id) {
 	struct service * s = get_service(p, id);
-	assert(s != NULL);
-	*service_slot(p, id.id) = NULL;
-	free_service(s);
+	if (s) {
+		*service_slot(p, id.id) = NULL;
+		free_service(s);
+	}
 }
 
 static inline lua_State *
@@ -174,20 +197,24 @@ service_L(struct service_pool *p, service_id id) {
 
 const char *
 service_load(struct service_pool *p, service_id id, const char *filename) {
+	struct service *S= get_service(p, id);
 	lua_State *L = service_L(p, id);
-	if (L == NULL)
+	if (S == NULL || S->L == NULL)
 		return "Init service first";
 	if (luaL_loadfile(L, filename) != LUA_OK) {
-		const char * r = lua_tostring(L, -1);
-		lua_pop(L, 1);
+		const char * r = lua_tostring(S->L, -1);
+		lua_pop(S->L, 1);
 		return r;
 	}
+	S->status = SERVICE_STATUS_IDLE;
 	return NULL;
 }
 
 int
 service_resume(struct service_pool *p, service_id id) {
 	lua_State *L = service_L(p, id);
+	if (L == NULL)
+		return 1;
 	int nresults = 0;
 	int r = lua_resume(L, NULL, 0, &nresults);
 	if (r == LUA_YIELD) {
@@ -201,7 +228,7 @@ service_resume(struct service_pool *p, service_id id) {
 int
 service_push_message(struct service_pool *p, service_id id, struct message *msg) {
 	struct service *s = get_service(p, id);
-	if (s == NULL)
+	if (s == NULL || s->status == SERVICE_STATUS_DEAD)
 		return -1;
 	if (queue_push_ptr(s->msg, msg)) {
 		// blocked
@@ -247,10 +274,33 @@ service_send_message(struct service_pool *p, service_id id, struct message *msg)
 }
 
 void
-service_message_resp(struct service_pool *p, service_id id, struct message *resp) {
+service_write_receipt(struct service_pool *p, service_id id, int receipt, struct message *bounce) {
 	struct service *s = get_service(p, id);
-	assert (s != NULL && s->resp == NULL);
-	s->resp = resp;
+	if (s != NULL && s->receipt == MESSAGE_RECEIPT_NONE) {
+		s->receipt = receipt;
+		s->bounce = bounce;
+	} else {
+		fprintf(stderr, "WARNING: write receipt %d fail (%d)\n", id.id, s->receipt);
+		if (s) {
+			message_delete(s->bounce);
+			s->receipt = receipt;
+			s->bounce = bounce;
+		}
+	}
+}
+
+struct message *
+service_read_receipt(struct service_pool *p, service_id id, int *receipt) {
+	struct service *s = get_service(p, id);
+	if (s == NULL) {
+		*receipt = MESSAGE_RECEIPT_NONE;
+		return NULL;
+	}
+	*receipt = s->receipt;
+	struct message *r = s->bounce;
+	s->receipt = MESSAGE_RECEIPT_NONE;
+	s->bounce = NULL;
+	return r;
 }
 
 struct message *
@@ -258,24 +308,38 @@ service_pop_message(struct service_pool *p, service_id id) {
 	struct service *s = get_service(p, id);
 	if (s == NULL)
 		return NULL;
-	if (s->resp) {
-		struct message *r = s->resp;
-		s->resp = NULL;
+	if (s->bounce) {
+		struct message *r = s->bounce;
+		s->bounce = NULL;
 		return r;
 	}
 	return queue_pop_ptr(s->msg);
 }
 
 int
-service_message_count(struct service_pool *p, service_id id) {
+service_has_message(struct service_pool *p, service_id id) {
 	struct service *s = get_service(p, id);
-	if (s == NULL || s->msg == NULL)
+	if (s == NULL)
 		return 0;
-	int count = 0;
-	if (s->resp) {
-		count++;
+	if (s->receipt != MESSAGE_RECEIPT_NONE) {
+		return 1;
 	}
-	count += queue_length(s->msg);
-	return count;
+	return queue_length(s->msg) > 0;
 }
 
+int
+service_hang(struct service_pool *p, service_id id) {
+	struct service *s = get_service(p, id);
+	if (s == NULL)
+		return 0;
+	switch (s->status) {
+	case SERVICE_STATUS_UNINITIALIZED:
+	case SERVICE_STATUS_IDLE:
+	case SERVICE_STATUS_SCHEDULE:
+	case SERVICE_STATUS_DEAD:
+		s->status = SERVICE_STATUS_DEAD;
+		return 0;
+	}
+	// service is running
+	return 1;
+}

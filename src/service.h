@@ -11,11 +11,10 @@
 #define SERVICE_STATUS_UNINITIALIZED 0
 #define SERVICE_STATUS_IDLE 1
 #define SERVICE_STATUS_SCHEDULE 2
-#define SERVICE_STATUS_READY 3
-#define SERVICE_STATUS_RUNNING 4
-#define SERVICE_STATUS_DONE 5
-#define SERVICE_STATUS_DEAD 6
-
+#define SERVICE_STATUS_RUNNING 3
+#define SERVICE_STATUS_DONE 4
+#define SERVICE_STATUS_DEAD 5
+#define SERVICE_STATUS_EXCLUSIVE 6
 
 struct service_pool;
 struct ltask_config;
@@ -30,6 +29,9 @@ void service_destory(struct service_pool *p);
 service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
 int service_init(struct service_pool *p, service_id id, void *ud, size_t sz);
+// 0 succ
+int service_hang(struct service_pool *p, service_id id);
+void service_close(struct service_pool *p, service_id id);
 void service_delete(struct service_pool *p, service_id id);
 const char * service_load(struct service_pool *p, service_id id, const char *filename);
 // 0 yield , 1 term or error
@@ -37,12 +39,13 @@ int service_resume(struct service_pool *p, service_id id);
 // 0 succ, 1 blocked, -1 not exist
 int service_push_message(struct service_pool *p, service_id id, struct message *msg);
 struct message * service_pop_message(struct service_pool *p, service_id id);
+int service_has_message(struct service_pool *p, service_id id);
 int service_status_get(struct service_pool *p, service_id id);
 void service_status_set(struct service_pool *p, service_id id, int status);
 // 0 succ
 int service_send_message(struct service_pool *p, service_id id, struct message *msg);
 struct message * service_message_out(struct service_pool *p, service_id id);
-void service_message_resp(struct service_pool *p, service_id id, struct message *resp);
-int service_message_count(struct service_pool *p, service_id id);
+void service_write_receipt(struct service_pool *p, service_id id, int receipt, struct message *bounce);
+struct message * service_read_receipt(struct service_pool *p, service_id id, int *receipt);
 
 #endif
