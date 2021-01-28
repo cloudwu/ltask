@@ -15,6 +15,12 @@
 #include "lua-seri.h"
 #include "timer.h"
 
+#if defined(_WIN32)
+#include "systime.h"
+#else
+#include <unistd.h>
+#endif
+
 #define THREAD_NONE -1
 #define THREAD_WORKER(n) (MAX_EXCLUSIVE + (n))
 #define THREAD_EXCLUSIVE(n) (n)
@@ -850,12 +856,20 @@ luaseri_remove(lua_State *L) {
 	return 0;
 }
 
-#include <unistd.h>
-
 static int
 lusleep(lua_State *L) {
-	int usec = luaL_checkinteger(L, 1);
+	lua_Integer usec = luaL_checkinteger(L, 1);
+#if defined(_WIN32)
+	HANDLE timer;
+	LARGE_INTEGER period;
+	period.QuadPart = -(10*(int64_t)usec);
+	timer = CreateWaitableTimer(NULL, TRUE, NULL);
+	SetWaitableTimer(timer, &period, 0, NULL, NULL, 0);
+	WaitForSingleObject(timer, INFINITE);
+	CloseHandle(timer);
+#else
 	usleep(usec);
+#endif
 	return 0;
 }
 
@@ -911,6 +925,9 @@ luaopen_ltask(lua_State *L) {
 	};
 
 	luaL_newlib(L, l);
+#if defined(_WIN32)
+	set_highest_timer_resolution();
+#endif
 	return 1;
 }
 
