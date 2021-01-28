@@ -82,8 +82,10 @@ local function resume_session(co, ...)
 end
 
 -- todo: cache thread
+local new_thread = coroutine.create
+
 local function new_session(f, type, from, session, msg, sz)
-	local co = coroutine.create(f)
+	local co = new_thread(f)
 	session_coroutine_address[co] = from
 	session_coroutine_response[co] = session
 	return resume_session(co, type, msg, sz)
@@ -151,6 +153,20 @@ function ltask.syscall(address, ...)
 		-- type == MESSAGE_ERROR
 		error(ltask.unpack_remove(msg, sz))
 	end
+end
+
+function ltask.sleep(ti)
+	session_coroutine_suspend_lookup[session_id] = running_thread
+	ltask.timer_add(session_id, ti)
+	session_id = session_id + 1
+	coroutine.yield()
+end
+
+function ltask.timeout(ti, func)
+	local co = new_thread(func)
+	session_coroutine_suspend_lookup[session_id] = co
+	ltask.timer_add(session_id, ti)
+	session_id = session_id + 1
 end
 
 ltask.post_message = post_message

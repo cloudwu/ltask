@@ -46,7 +46,9 @@ local function exclusive_thread( name, id )
 end
 
 bootstrap()	-- launch root
---exclusive_thread ("timer", SERVICE_TIMER)
+
+boot.init_timer()
+exclusive_thread ("timer", SERVICE_TIMER)
 
 print "ltask Start"
 boot.run()

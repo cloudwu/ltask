@@ -35,7 +35,8 @@ void service_close(struct service_pool *p, service_id id);
 void service_delete(struct service_pool *p, service_id id);
 const char * service_load(struct service_pool *p, service_id id, const char *filename);
 // 0 yield , 1 term or error
-int service_resume(struct service_pool *p, service_id id);
+int service_resume(struct service_pool *p, service_id id, int thread_id);
+int service_thread_id(struct service_pool *p, service_id id);
 // 0 succ, 1 blocked, -1 not exist
 int service_push_message(struct service_pool *p, service_id id, struct message *msg);
 struct message * service_pop_message(struct service_pool *p, service_id id);

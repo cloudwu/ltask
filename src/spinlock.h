@@ -6,35 +6,36 @@
 #include <windows.h>
 
 struct spinlock {
-	HANDLE mutex;
+	CRITICAL_SECTION cs;
 };
 
 static inline int
 spinlock_init(struct spinlock *lock) {
-	lock->mutex = CreateMutexW(NULL, FALSE, NULL);
-	return (lock->mutex == NULL);
+	InitializeCriticalSection(&lock->cs);
+	return 0;
 }
 
 static inline int
 spinlock_destroy(struct spinlock *lock) {
-	return CloseHandle(lock->mutex) == 0;
+	DeleteCriticalSection(&lock->cs);
+	return 0;
 }
 
 static inline int
 spinlock_acquire(struct spinlock *lock) {
-	DWORD dwWaitResult = WaitForSingleObject(lock->mutex, INFINITE);
-	return dwWaitResult != WAIT_OBJECT_0;
+	EnterCriticalSection(&lock->cs);
+	return 0;
 }
 
 static inline int
 spinlock_release(struct spinlock *lock) {
-	return ReleaseMutex(lock->mutex) == 0;
+	LeaveCriticalSection(&lock->cs);
+	return 0;
 }
 
 static inline int
 spinlock_try(struct spinlock *lock) {
-	DWORD dwWaitResult = WaitForSingleObject(lock->mutex, 0);
-	return dwWaitResult != WAIT_OBJECT_0;
+	return !TryEnterCriticalSection(&lock->cs);
 }
 
 #else

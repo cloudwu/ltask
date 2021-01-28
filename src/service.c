@@ -21,6 +21,7 @@ struct service {
 	struct message *bounce;
 	int status;
 	int receipt;
+	int thread_id;
 	service_id id;
 };
 
@@ -132,6 +133,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->receipt = MESSAGE_RECEIPT_NONE;
 	s->id.id = id;
 	s->status = SERVICE_STATUS_UNINITIALIZED;
+	s->thread_id = -1;
 	*service_slot(p, id) = s;
 	result.id = id;
 	return result;
@@ -171,11 +173,13 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 void 
 service_close(struct service_pool *p, service_id id) {
 	struct service * s = get_service(p, id);
-	if (s && s->L) {
-		lua_close(s->L);
-		s->L = NULL;
+	if (s) {
+		if (s->L) {
+			lua_close(s->L);
+			s->L = NULL;
+		}
+		s->status = SERVICE_STATUS_DEAD;
 	}
-	s->status = SERVICE_STATUS_DEAD;
 }
 
 void
@@ -198,9 +202,9 @@ service_L(struct service_pool *p, service_id id) {
 const char *
 service_load(struct service_pool *p, service_id id, const char *filename) {
 	struct service *S= get_service(p, id);
-	lua_State *L = service_L(p, id);
 	if (S == NULL || S->L == NULL)
 		return "Init service first";
+	lua_State *L = S->L;
 	if (luaL_loadfile(L, filename) != LUA_OK) {
 		const char * r = lua_tostring(S->L, -1);
 		lua_pop(S->L, 1);
@@ -211,8 +215,12 @@ service_load(struct service_pool *p, service_id id, const char *filename) {
 }
 
 int
-service_resume(struct service_pool *p, service_id id) {
-	lua_State *L = service_L(p, id);
+service_resume(struct service_pool *p, service_id id, int thread_id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return 1;
+	S->thread_id = thread_id;
+	lua_State *L = S->L;
 	if (L == NULL)
 		return 1;
 	int nresults = 0;
@@ -223,6 +231,14 @@ service_resume(struct service_pool *p, service_id id) {
 	}
 	// term or error
 	return 1;
+}
+
+int
+service_thread_id(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return -1;
+	return S->thread_id;
 }
 
 int

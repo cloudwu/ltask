@@ -44,6 +44,8 @@ config_load(lua_State *L, int index, struct ltask_config *config) {
 	}
 	config->queue = config_getint(L, index, "queue", DEFAULT_QUEUE);
 	config->queue = align_pow2(config->queue);
+	config->queue_sending = config_getint(L, index, "queue_sending", DEFAULT_QUEUE_SENDING);
+	config->queue_sending = align_pow2(config->queue_sending);
 	config->max_service = config_getint(L, index, "max_service", DEFAULT_MAX_SERVICE);
 	config->max_service = align_pow2(config->max_service);
 	
