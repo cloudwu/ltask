@@ -31,10 +31,10 @@ uint64_t
 systime_wall() {
 	uint64_t t;
 #if defined(_WIN32)
- 	FILETIME f;
+	FILETIME f;
 	GetSystemTimeAsFileTime(&f);
 	t = ((uint64_t)f.dwHighDateTime << 32) | f.dwLowDateTime;
-	t /= 100;
+	t = t / 100000i64 - 1164447360000i64;
 #elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
 	struct timespec ti;
 	clock_gettime(CLOCK_REALTIME, &ti);
