@@ -7,4 +7,8 @@
 uint64_t systime_wall();
 uint64_t systime_mono();
 
+#if defined(_WIN32)
+void set_highest_timer_resolution();
+#endif
+
 #endif

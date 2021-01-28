@@ -131,7 +131,7 @@ queue_pop_ptr(struct queue *q) {
 
 int
 queue_length(struct queue *q) {
-	int len = q->tail - q->head;
+	int len = atomic_int_load(&q->tail) - atomic_int_load(&q->head);
 	if (len < 0)
 		len += q->size;
 	return len;
