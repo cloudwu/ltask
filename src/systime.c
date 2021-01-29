@@ -1,3 +1,11 @@
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define _WIN32_WINNT 0x0600
+#endif
+
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
+
 #include <time.h>
 
 #if defined(__APPLE__)
@@ -7,25 +15,7 @@
 #include <mach/mach.h>
 #endif
 
-#if defined(_WIN32)
-#include <Windows.h>
-#endif
-
 #include "systime.h"
-
-#if defined(_WIN32)
-void
-set_highest_timer_resolution() {
-	HMODULE ntdll = GetModuleHandleW(L"NTDLL.dll");
-	if (ntdll) {
-		FARPROC NtSetTimerResolution = GetProcAddress(ntdll, "NtSetTimerResolution");
-		if (NtSetTimerResolution) {
-			unsigned long timer_current_res = ULONG_MAX;
-			((long(NTAPI*)(unsigned long, BOOLEAN, unsigned long*))NtSetTimerResolution)(1, TRUE, &timer_current_res);
-		}
-	}
-}
-#endif
 
 uint64_t
 systime_wall() {
@@ -34,7 +24,7 @@ systime_wall() {
 	FILETIME f;
 	GetSystemTimeAsFileTime(&f);
 	t = ((uint64_t)f.dwHighDateTime << 32) | f.dwLowDateTime;
-	t = t / 100000i64 - 1164447360000i64;
+	t = t / (uint64_t)100000 - (uint64_t)1164447360000;
 #elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
 	struct timespec ti;
 	clock_gettime(CLOCK_REALTIME, &ti);

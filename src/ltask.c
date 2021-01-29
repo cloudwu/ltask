@@ -14,12 +14,7 @@
 #include "message.h"
 #include "lua-seri.h"
 #include "timer.h"
-
-#if defined(_WIN32)
-#include "systime.h"
-#else
-#include <unistd.h>
-#endif
+#include "sysapi.h"
 
 #define THREAD_NONE -1
 #define THREAD_WORKER(n) (MAX_EXCLUSIVE + (n))
@@ -661,8 +656,8 @@ ltask_timer_add(lua_State *L) {
 	struct timer_event ev;
 	ev.session = luaL_checkinteger(L, 1);
 	ev.id = S->id;
-	int ti = (int)(luaL_checknumber(L, 2) * 100);
-	if (ti < 0)
+	lua_Integer ti = luaL_checkinteger(L, 2);
+	if (ti < 0 || ti != (int)ti)
 		return luaL_error(L, "Invalid timer %d", ti);
 
 	timer_add(t, &ev, sizeof(ev), ti);
@@ -857,19 +852,9 @@ luaseri_remove(lua_State *L) {
 }
 
 static int
-lusleep(lua_State *L) {
-	lua_Integer usec = luaL_checkinteger(L, 1);
-#if defined(_WIN32)
-	HANDLE timer;
-	LARGE_INTEGER period;
-	period.QuadPart = -(10*(int64_t)usec);
-	timer = CreateWaitableTimer(NULL, TRUE, NULL);
-	SetWaitableTimer(timer, &period, 0, NULL, NULL, 0);
-	WaitForSingleObject(timer, INFINITE);
-	CloseHandle(timer);
-#else
-	usleep(usec);
-#endif
+lsleep(lua_State *L) {
+	lua_Integer csec = luaL_checkinteger(L, 1);
+	sys_sleep(csec);
 	return 0;
 }
 
@@ -902,8 +887,9 @@ ltask_now(lua_State *L) {
 	}
 	uint32_t start = timer_starttime(TI);
 	uint64_t now = timer_now(TI);
-	lua_pushnumber(L, start + now / 100.0);
-	return 1;
+	lua_pushinteger(L, start + now / 100);
+	lua_pushinteger(L, start * 100 + now);
+	return 2;
 }
 
 LUAMOD_API int
@@ -917,7 +903,7 @@ luaopen_ltask(lua_State *L) {
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
 		{ "message_receipt", lmessage_receipt },
-		{ "usleep", lusleep },
+		{ "sleep", lsleep },
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
@@ -925,9 +911,6 @@ luaopen_ltask(lua_State *L) {
 	};
 
 	luaL_newlib(L, l);
-#if defined(_WIN32)
-	set_highest_timer_resolution();
-#endif
 	return 1;
 }
 

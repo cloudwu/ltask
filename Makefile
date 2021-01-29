@@ -6,7 +6,19 @@ LUALIB=-L/usr/local/bin -llua54
 
 all : ltask.$(SO)
 
-ltask.$(SO) : src/ltask.c src/queue.c src/sysinfo.c src/service.c src/config.c src/lua-seri.c src/message.c src/systime.c src/timer.c
+SRCS=\
+ src/ltask.c \
+ src/queue.c \
+ src/sysinfo.c \
+ src/service.c \
+ src/config.c \
+ src/lua-seri.c \
+ src/message.c \
+ src/systime.c \
+ src/timer.c \
+ src/sysapi.c
+
+ltask.$(SO) : $(SRCS)
 	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB)
 
 clean :

@@ -44,7 +44,7 @@ end
 
 local function boot()
 	print "Root init"
-	print(os.date("%c", math.floor(ltask.now())))
+	print(os.date("%c", (ltask.now())))
 	local addr = S.spawn("user", "Hello")
 	print(ltask.call(addr, "ping", "PONG"))
 	print(ltask.send(addr, "ping", "SEND"))

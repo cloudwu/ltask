@@ -12,27 +12,65 @@ local function dispatch_messages()
 	end
 end
 
+local blocked_message
+
+local function retry_blocked_message()
+	local blocked = blocked_message
+	blocked_message = nil
+	for i = 1, #blocked, 2 do
+		local session = blocked[i]
+		local address = blocked[i+1]
+		if not exclusive.send(address, session, MESSAGE_RESPONSE) then
+			-- blocked
+			print("Timer message to " .. address .. " is blocked")
+			if blocked_message then
+				local n = #blocked_message
+				blocked_message[n+1] = session
+				blocked_message[n+2] = address
+			else
+				blocked_message = { session, address }
+			end
+		end
+	end
+end
+
+local function send_blocked_message(blocked)
+	local retry = 1
+	for i = 1, #blocked, 2 do
+		local session = blocked[i]
+		local address = blocked[i+1]
+		if not exclusive.send(address, session, MESSAGE_RESPONSE) then
+			-- blocked
+			if retry >= 10 then
+				if blocked_message then
+					local n = #blocked_message
+					blocked_message[n+1] = session
+					blocked_message[n+2] = address
+				else
+					blocked_message = { session, address }
+				end
+			else
+				ltask.sleep(1)
+				coroutine.yield()
+				retry = retry + 1
+			end
+		end
+	end
+end
+
 print "Timer start"
 while true do
 	while dispatch_messages() do end
 	local blocked = exclusive.timer_update()
 	coroutine.yield()
-	local sleeping = 2500 -- sleep 2.5 ms
 	if blocked then
-		print "Too many timer message"
-		for i = 1, #blocked, 2 do
-			local session = blocked[i]
-			local address = blocked[i+1]
-			if not exclusive.send(address, session, MESSAGE_RESPONSE) then
-				-- blocked
-				coroutine.yield()
-				if sleeping > 100 then
-					sleeping = sleeping - 100
-					ltask.usleep(100)	-- sleep 0.1 ms
-				end
-			end
+		ltask.sleep(1)	-- sleep 1/1000s
+		coroutine.yield()
+		if blocked_message then
+			retry_blocked_message()
 		end
+		send_blocked_message(blocked)
+	else
+		ltask.sleep(1)
 	end
-
-	ltask.usleep(sleeping)
 end
