@@ -4,6 +4,10 @@ CFLAGS=-g -Wall
 LUAINC=-I/usr/local/include
 LUALIB=-L/usr/local/bin -llua54
 
+ifeq ($(OS),Windows_NT)
+  WINLIB=-lwinmm
+endif
+
 all : ltask.$(SO)
 
 SRCS=\
@@ -19,7 +23,7 @@ SRCS=\
  src/sysapi.c
 
 ltask.$(SO) : $(SRCS)
-	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB)
+	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB) $(WINLIB)
 
 clean :
 	rm -rf *.$(SO)
