@@ -5,6 +5,10 @@
 #include <unistd.h>
 
 void
+sys_init() {
+}
+
+void
 sys_sleep(unsigned int csec) {
 	usleep(usec * 1000);
 }
