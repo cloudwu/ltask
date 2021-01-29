@@ -85,8 +85,6 @@ service_destory(struct service_pool *p) {
 	free(p);
 }
 
-int luaopen_ltask(lua_State *L);
-
 static int
 init_service(lua_State *L) {
 	void *ud = lua_touserdata(L, 1);
@@ -94,7 +92,6 @@ init_service(lua_State *L) {
 	lua_pushlstring(L, (const char *)ud, sz);
 	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
 	luaL_openlibs(L);
-	luaL_requiref(L, "ltask", luaopen_ltask, 1);
 	return 0;
 }
 
@@ -170,6 +167,30 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	return 0;
 }
 
+static int
+require_cmodule(lua_State *L) {
+	const char *name = luaL_checkstring(L, 1);
+	lua_CFunction f = (lua_CFunction)lua_touserdata(L, 2);
+	luaL_requiref(L, name, f, 0);
+	return 0;
+}
+
+int
+service_requiref(struct service_pool *p, service_id id, const char *name, void *f) {
+	struct service *S = get_service(p, id);
+	if (S == NULL || S->L == NULL)
+		return 1;
+	lua_State *L = S->L;
+	lua_pushcfunction(L, require_cmodule);
+	lua_pushstring(L, name);
+	lua_pushlightuserdata(L, f);
+	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		lua_pop(L, 1);
+		return 1;
+	}
+	return 0;
+}
+
 void 
 service_close(struct service_pool *p, service_id id) {
 	struct service * s = get_service(p, id);
@@ -227,30 +248,6 @@ service_loadstring(struct service_pool *p, service_id id, const char *source) {
 	}
 	S->status = SERVICE_STATUS_IDLE;
 	return NULL;
-}
-
-static int
-set_registry(lua_State *L) {
-	const char *key = (const char *)lua_touserdata(L,1);
-	lua_setfield(L, LUA_REGISTRYINDEX, key);
-	return 0;
-}
-
-int
-service_set_registry(struct service_pool *p, service_id id, const char *key, void *ud) {
-	struct service *S= get_service(p, id);
-	if (S == NULL || S->L == NULL)
-		return 1;
-	lua_State *L = S->L;
-	lua_pushcfunction(L, set_registry);
-	lua_pushlightuserdata(L, (void *)key);
-	lua_pushlightuserdata(L, ud);
-	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-		// Out of memory
-		lua_pop(L, 1);
-		return 1;
-	}
-	return 0;
 }
 
 int

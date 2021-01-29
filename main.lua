@@ -26,6 +26,7 @@ config.MESSAGE_SCHEDULE_HANG = 2
 
 local function bootstrap()
 	assert(boot.new_service("@" .. config.service, SERVICE_ROOT))
+	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
 	local init_msg, sz = ltask.pack("init", "luasrc/root.lua", config)
 	-- self bootstrap

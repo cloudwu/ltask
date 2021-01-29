@@ -16,6 +16,11 @@
 #include "timer.h"
 #include "sysapi.h"
 
+LUAMOD_API int luaopen_ltask(lua_State *L);
+LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
+LUAMOD_API int luaopen_ltask_exclusive(lua_State *L);
+LUAMOD_API int luaopen_ltask_root(lua_State *L);
+
 #define THREAD_NONE -1
 #define THREAD_WORKER(n) (MAX_EXCLUSIVE + (n))
 #define THREAD_EXCLUSIVE(n) (n)
@@ -454,6 +459,7 @@ ltask_exclusive(lua_State *L) {
 	if (service_status_get(task->services, e->service) != SERVICE_STATUS_IDLE) {
 		return luaL_error(L, "Service is uninitialized");
 	}
+	service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive);
 	service_status_set(task->services, e->service, SERVICE_STATUS_EXCLUSIVE);
 	e->task = task;
 	e->thread_id = ecount;
@@ -529,7 +535,7 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *filename
 	ud.task = task;
 	ud.id = id;
 	struct service_pool *S = task->services;
-	if (service_init(S, id, (void *)&ud, sizeof(ud))) {
+	if (service_init(S, id, (void *)&ud, sizeof(ud)) || service_requiref(S, id, "ltask", luaopen_ltask)) {
 		service_delete(S, id);
 		luaL_error(L, "New services faild");
 	} else {
@@ -613,14 +619,14 @@ ltask_init_timer(lua_State *L) {
 }
 
 static int
-ltask_set_registry(lua_State *L) {
+ltask_init_root(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
 	service_id id = { luaL_checkinteger(L, 1) };
-	luaL_checktype(L, 2, LUA_TLIGHTUSERDATA );
-	const char *key = luaL_checkstring(L, 2);
-	void *ud = lua_touserdata(L, 3);
-	if (service_set_registry(task->services, id, key, ud)) {
-		return luaL_error(L, "Set registry .%s failed", key);
+	if (id.id != SERVICE_ID_ROOT) {
+		return luaL_error(L, "Id should be ROOT(1)");
+	}
+	if (service_requiref(task->services, id, "ltask.root", luaopen_ltask_root)) {
+		return luaL_error(L, "require ltask.root fail");
 	}
 	return 0;
 }
@@ -640,7 +646,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "post_message", lpost_message },
 		{ "new_service", ltask_newservice },
 		{ "init_timer", ltask_init_timer },
-		{ "set_registry", ltask_set_registry },
+		{ "init_root", ltask_init_root },
 		{ NULL, NULL },
 	};
 	
