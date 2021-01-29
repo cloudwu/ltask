@@ -1,13 +1,22 @@
 local ltask = require "ltask"
 local exclusive = require "ltask.exclusive"
 
+local SERVICE_ROOT <const> = 1
 local MESSAGE_RESPONSE <const> = 2
+local quit
 
 -- todo: query timer internal information
 local function dispatch_messages()
 	local from, session, type, msg, sz = ltask.recv_message()
 	if from then
-		print("Timer message : ", ltask.unpack_remove(msg, sz))
+		if from == SERVICE_ROOT then
+			local command = ltask.unpack_remove(msg, sz)
+			if command == "QUIT" then
+				quit = true
+			end
+		else
+			print("Timer message : ", from, ltask.unpack_remove(msg, sz))
+		end
 		return true
 	end
 end
@@ -59,7 +68,7 @@ local function send_blocked_message(blocked)
 end
 
 print "Timer start"
-while true do
+while not quit do
 	while dispatch_messages() do end
 	local blocked = exclusive.timer_update()
 	coroutine.yield()
@@ -74,3 +83,4 @@ while true do
 		ltask.sleep(1)
 	end
 end
+print "Timer quit"

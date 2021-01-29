@@ -47,6 +47,11 @@ worker_wakeup(struct worker_thread *w) {
 }
 
 static inline void
+worker_quit(struct worker_thread *w) {
+	w->sleeping = 0;
+}
+
+static inline void
 worker_destory(struct worker_thread *worker) {
 	thread_event_release(&worker->trigger);
 }

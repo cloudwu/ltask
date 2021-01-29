@@ -40,16 +40,19 @@ local function bootstrap()
 	}
 end
 
+config.exclusive = {}
+
 local function exclusive_thread( name, id )
 	local sid = boot.new_service("@luasrc/" .. name .. ".lua", id)
 	assert(sid == id)
 	boot.new_thread(sid)
+	table.insert(config.exclusive, sid)
 end
-
-bootstrap()	-- launch root
 
 boot.init_timer()
 exclusive_thread ("timer", SERVICE_TIMER)
+
+bootstrap()	-- launch root
 
 print "ltask Start"
 boot.run()

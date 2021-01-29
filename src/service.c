@@ -26,6 +26,7 @@ struct service {
 };
 
 struct service_pool {
+	int alive;
 	int mask;
 	int queue_length;
 	unsigned int id;
@@ -39,6 +40,7 @@ service_create(struct ltask_config *config) {
 	tmp.mask = config->max_service - 1;
 	tmp.id = 0;
 	tmp.queue_length = config->queue;
+	tmp.alive = 0;
 	tmp.s = (struct service **)malloc(sizeof(struct service *) * config->max_service);
 	if (tmp.s == NULL)
 		return NULL;
@@ -68,6 +70,7 @@ free_service(struct service *S) {
 	}
 	message_delete(S->out);
 	message_delete(S->bounce);
+	S->receipt = MESSAGE_RECEIPT_NONE;
 }
 
 void
@@ -83,6 +86,11 @@ service_destory(struct service_pool *p) {
 	}
 	free(p->s);
 	free(p);
+}
+
+int
+service_alive(struct service_pool *p) {
+	return p->alive;
 }
 
 static int
@@ -133,6 +141,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->thread_id = -1;
 	*service_slot(p, id) = s;
 	result.id = id;
+	++p->alive;
 	return result;
 }
 
@@ -209,6 +218,7 @@ service_delete(struct service_pool *p, service_id id) {
 	if (s) {
 		*service_slot(p, id.id) = NULL;
 		free_service(s);
+		--p->alive;
 	}
 }
 

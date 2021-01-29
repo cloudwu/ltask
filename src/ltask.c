@@ -175,7 +175,7 @@ schedule_dispatch(struct ltask *task) {
 		service_id id = done_job[i];
 		if (service_status_get(P, id) == SERVICE_STATUS_DEAD) {
 			// dead service may enter into schedule because of blocked response messages
-			if (service_has_message(P, id)) {
+			if (!service_has_message(P, id)) {
 				service_delete(P, id);
 			} else {
 				schedule_back(task, id);
@@ -229,11 +229,13 @@ acquire_scheduler(struct worker_thread * worker) {
 	return 1;
 }
 
-static void
+static int
 release_scheduler(struct worker_thread * worker) {
+	int alive = service_alive(worker->task->services);
 	assert(atomic_int_load(&worker->task->schedule_owner) == THREAD_WORKER(worker->worker_id));
 	atomic_int_store(&worker->task->schedule_owner, THREAD_NONE);
-	debug_printf("Worker %d release\n", worker->worker_id);
+	debug_printf("Worker %d release (%d)\n", worker->worker_id, alive);
+	return alive == 0;
 }
 
 static void
@@ -242,11 +244,13 @@ acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	debug_printf("Exclusive %d acquire\n", exclusive->thread_id);
 }
 
-static void
+static int
 release_scheduler_exclusive(struct exclusive_thread * exclusive) {
+	int alive = service_alive(exclusive->task->services);
 	assert(atomic_int_load(&exclusive->task->schedule_owner) == THREAD_EXCLUSIVE(exclusive->thread_id));
 	atomic_int_store(&exclusive->task->schedule_owner, THREAD_NONE);
-	debug_printf("Exclusive %d release\n", exclusive->thread_id);
+	debug_printf("Exclusive %d release (%d)\n", exclusive->thread_id, alive);
+	return alive == 0;
 }
 
 static service_id
@@ -291,6 +295,14 @@ close_service(struct service_pool *P, service_id id) {
 }
 
 static void
+wakeup_all_workers(struct ltask *task) {
+	int i;
+	for (i=0;i<task->config->worker;i++) {
+		worker_wakeup(&task->workers[i]);
+	}
+}
+
+static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
@@ -325,14 +337,16 @@ thread_worker(void *ud) {
 			service_status_set(P, id, isdead ? SERVICE_STATUS_DEAD : SERVICE_STATUS_DONE);
 			if (scheduler_is_owner) {
 				schedule_dispatch_worker(w);
-				release_scheduler(w);
+				if (release_scheduler(w))
+					break;	// exit
 			}
 		} else {
 			// No job, try to acquire scheduler to find a job
 			int nojob = 1;
 			if (!acquire_scheduler(w)) {
 				nojob = schedule_dispatch_worker(w);
-				release_scheduler(w);
+				if (release_scheduler(w))
+					break;	// exit
 			}
 			if (nojob) {
 				// go to sleep
@@ -341,6 +355,9 @@ thread_worker(void *ud) {
 			}
 		}
 	}
+	worker_quit(w);
+	debug_printf("Quit Worker %d\n",w->worker_id);
+	wakeup_all_workers(w->task);
 }
 
 static void
@@ -379,9 +396,12 @@ thread_exclusive(void *ud) {
 			if (isdead) {
 				service_delete(P, id);
 			}
-			release_scheduler_exclusive(e);
+			if (release_scheduler_exclusive(e))
+				break;
 		}
 	}
+	debug_printf("Exclusive quit %d\n", e->thread_id);
+	wakeup_all_workers(e->task);
 }
 
 static int

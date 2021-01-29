@@ -13,7 +13,7 @@ function S.ping(...)
 end
 
 function S.exit()
-	ltask.call(1, "kill", ltask.self())
+	ltask.quit()
 end
 
 return S

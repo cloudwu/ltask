@@ -21,7 +21,10 @@ local function init_service(address, name, ...)
 	ltask.syscall(address, "init", config.service_path .. name..".lua", ...)
 end
 
--- todo: mange services
+-- todo: manage services
+
+local SERVICE_N = 0
+
 function S.spawn(name, ...)
 	local address = assert(ltask.post_message(0, 0, config.MESSAGE_SCHEDULE_NEW))
 	local ok, err = pcall(init_service, address, name, ...)
@@ -29,10 +32,12 @@ function S.spawn(name, ...)
 		ltask.post_message(0,address,config.MESSAGE_SCHEDULE_DEL)
 		error(err)
 	end
+	print("SERVICE NEW", address)
+	SERVICE_N = SERVICE_N + 1
 	return address
 end
 
-function S.kill(address)
+local function kill(address)
 	if ltask.post_message(0, address, config.MESSAGE_SCHEDULE_HANG) then
 		-- address must not in schedule
 		root.close_service(address)
@@ -42,13 +47,28 @@ function S.kill(address)
 	return false
 end
 
+function S.quit()
+	local s = ltask.current_session()
+	SERVICE_N = SERVICE_N - 1
+	assert(kill(s.from))
+	ltask.no_response()
+
+	if SERVICE_N == 0 then
+		-- Only root alive
+		for _, id in ipairs(config.exclusive) do
+			ltask.send(id, "QUIT")
+		end
+		ltask.quit()
+	end
+end
+
 local function boot()
 	print "Root init"
 	print(os.date("%c", (ltask.now())))
 	local addr = S.spawn("user", "Hello")
 	print(ltask.call(addr, "ping", "PONG"))
 	print(ltask.send(addr, "ping", "SEND"))
-	ltask.call(addr, "exit")
+	ltask.send(addr, "exit")
 	print(ltask.send(addr, "ping", "SEND"))
 end
 

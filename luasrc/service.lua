@@ -1,3 +1,6 @@
+local SERVICE_ROOT <const> = 1
+local SERVICE_TIMER <const> = 2
+
 local MESSAGE_SYSTEM <const> = 0
 local MESSAGE_REQUEST <const> = 1
 local MESSAGE_RESPONSE <const> = 2
@@ -96,8 +99,10 @@ local SESSION = {}
 local function send_response(...)
 	local from = session_coroutine_address[running_thread]
 	local session = session_coroutine_response[running_thread]
-	if not post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
-		print(string.format("Response to absent %x", from))
+	if session then
+		if not post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
+			print(string.format("Response to absent %x", from))
+		end
 	end
 end
 
@@ -171,7 +176,24 @@ end
 
 ltask.post_message = post_message
 
+function ltask.current_session()
+	local from = session_coroutine_address[running_thread]
+	local session = session_coroutine_response[running_thread]
+	return { from = from, session = session }
+end
+
+function ltask.no_response()
+	session_coroutine_response[running_thread] = nil
+end
+
 -------------
+
+local quit
+
+function ltask.quit()
+	ltask.send(SERVICE_ROOT, "quit")
+	quit = true
+end
 
 local service
 
@@ -205,7 +227,7 @@ SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 	send_response(request(ltask.unpack_remove(msg, sz)))
 end
 
-while true do
+while not quit do
 	local from, session, type, msg, sz = ltask.recv_message()
 	local f = SESSION[type]
 	local cont
