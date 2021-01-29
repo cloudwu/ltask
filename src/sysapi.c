@@ -14,6 +14,11 @@ sys_sleep(unsigned int csec) {
 #include <windows.h>
 
 void
+sys_init() {
+	timeBeginPeriod(1);
+}
+
+void
 sys_sleep(unsigned int csec) {
 	Sleep(csec);
 }

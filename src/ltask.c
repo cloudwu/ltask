@@ -930,6 +930,7 @@ luaopen_ltask(lua_State *L) {
 	};
 
 	luaL_newlib(L, l);
+	sys_init();
 	return 1;
 }
 
