@@ -200,7 +200,7 @@ service_L(struct service_pool *p, service_id id) {
 }
 
 const char *
-service_load(struct service_pool *p, service_id id, const char *filename) {
+service_loadfile(struct service_pool *p, service_id id, const char *filename) {
 	struct service *S= get_service(p, id);
 	if (S == NULL || S->L == NULL)
 		return "Init service first";
@@ -212,6 +212,45 @@ service_load(struct service_pool *p, service_id id, const char *filename) {
 	}
 	S->status = SERVICE_STATUS_IDLE;
 	return NULL;
+}
+
+const char *
+service_loadstring(struct service_pool *p, service_id id, const char *source) {
+	struct service *S= get_service(p, id);
+	if (S == NULL || S->L == NULL)
+		return "Init service first";
+	lua_State *L = S->L;
+	if (luaL_loadstring(L, source) != LUA_OK) {
+		const char * r = lua_tostring(S->L, -1);
+		lua_pop(S->L, 1);
+		return r;
+	}
+	S->status = SERVICE_STATUS_IDLE;
+	return NULL;
+}
+
+static int
+set_registry(lua_State *L) {
+	const char *key = (const char *)lua_touserdata(L,1);
+	lua_setfield(L, LUA_REGISTRYINDEX, key);
+	return 0;
+}
+
+int
+service_set_registry(struct service_pool *p, service_id id, const char *key, void *ud) {
+	struct service *S= get_service(p, id);
+	if (S == NULL || S->L == NULL)
+		return 1;
+	lua_State *L = S->L;
+	lua_pushcfunction(L, set_registry);
+	lua_pushlightuserdata(L, (void *)key);
+	lua_pushlightuserdata(L, ud);
+	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		// Out of memory
+		lua_pop(L, 1);
+		return 1;
+	}
+	return 0;
 }
 
 int

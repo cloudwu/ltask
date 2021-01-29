@@ -33,7 +33,10 @@ int service_init(struct service_pool *p, service_id id, void *ud, size_t sz);
 int service_hang(struct service_pool *p, service_id id);
 void service_close(struct service_pool *p, service_id id);
 void service_delete(struct service_pool *p, service_id id);
-const char * service_load(struct service_pool *p, service_id id, const char *filename);
+// 0 succ
+int service_set_registry(struct service_pool *p, service_id id, const char *key, void *ud);
+const char * service_loadfile(struct service_pool *p, service_id id, const char *filename);
+const char * service_loadstring(struct service_pool *p, service_id id, const char *source);
 // 0 yield , 1 term or error
 int service_resume(struct service_pool *p, service_id id, int thread_id);
 int service_thread_id(struct service_pool *p, service_id id);

@@ -17,7 +17,7 @@ do
 end
 
 local function init_service(address, name, ...)
-	root.init_service(address, config.service)
+	root.init_service(address, "@"..config.service)
 	ltask.syscall(address, "init", config.service_path .. name..".lua", ...)
 end
 

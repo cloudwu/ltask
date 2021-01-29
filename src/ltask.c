@@ -524,7 +524,7 @@ ltask_deinit(lua_State *L) {
 }
 
 static void
-newservice(lua_State *L, struct ltask *task, service_id id, const char *filename) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *filename_source) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
@@ -533,7 +533,12 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *filename
 		service_delete(S, id);
 		luaL_error(L, "New services faild");
 	} else {
-		const char * err = service_load(S, id, filename);
+		const char * err = NULL;
+		if (filename_source[0] == '@') {
+			service_loadfile(S, id, filename_source+1);
+		} else {
+			service_loadstring(S, id, filename_source);
+		}
 		if (err) {
 			lua_pushstring(L, err);
 			service_delete(S, id);
@@ -545,10 +550,10 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *filename
 static int
 ltask_newservice(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
-	const char *filename = luaL_checkstring(L, 1);
+	const char *filename_source = luaL_checkstring(L, 1);
 	unsigned int sid = luaL_optinteger(L, 2, 0);
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, filename);
+	newservice(L, task, id, filename_source);
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -607,6 +612,19 @@ ltask_init_timer(lua_State *L) {
 	return 0;
 }
 
+static int
+ltask_set_registry(lua_State *L) {
+	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
+	service_id id = { luaL_checkinteger(L, 1) };
+	luaL_checktype(L, 2, LUA_TLIGHTUSERDATA );
+	const char *key = luaL_checkstring(L, 2);
+	void *ud = lua_touserdata(L, 3);
+	if (service_set_registry(task->services, id, key, ud)) {
+		return luaL_error(L, "Set registry .%s failed", key);
+	}
+	return 0;
+}
+
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
 	static atomic_int init = ATOMIC_VAR_INIT(0);
@@ -622,6 +640,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "post_message", lpost_message },
 		{ "new_service", ltask_newservice },
 		{ "init_timer", ltask_init_timer },
+		{ "set_registry", ltask_set_registry },
 		{ NULL, NULL },
 	};
 	
@@ -931,10 +950,10 @@ static int
 ltask_initservice(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	unsigned int sid = luaL_checkinteger(L, 1);
-	const char *filename = luaL_checkstring(L, 2);
+	const char *filename_source = luaL_checkstring(L, 2);
 
 	service_id id = { sid };
-	newservice(L, S->task, id, filename);
+	newservice(L, S->task, id, filename_source);
 
 	return 0;
 }
