@@ -6,9 +6,8 @@
 
 int
 sysinfo_ncores() {
-	SYSTEM_INFO info;
-	GetSystemInfo(&info);
-	return (int)info.dwNumberOfProcessors;
+	// see https://devblogs.microsoft.com/oldnewthing/20200824-00/?p=104116
+	return GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
 }
 
 #else
