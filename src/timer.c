@@ -158,8 +158,8 @@ timer_update_tick(struct timer *T, timer_execute_func func, void *ud) {
 	spinlock_release(&T->lock);
 }
 
-struct timer *
-timer_create() {
+static struct timer *
+timer_new() {
 	struct timer *r=(struct timer *)malloc(sizeof(struct timer));
 	memset(r,0,sizeof(*r));
 
@@ -190,7 +190,7 @@ timer_release_func(void *ud, void *arg) {
 }
 
 void
-timer_release(struct timer *T) {
+timer_destroy(struct timer *T) {
 	if (T == NULL)
 		return;
 	spinlock_acquire(&T->lock);
@@ -241,7 +241,7 @@ timer_now(struct timer *TI) {
 
 struct timer *
 timer_init() {
-	struct timer *TI = timer_create();
+	struct timer *TI = timer_new();
 	uint64_t walltime = systime_wall();
 	TI->starttime = walltime/100;
 	TI->current = walltime % 100;

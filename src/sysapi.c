@@ -9,8 +9,8 @@ sys_init() {
 }
 
 void
-sys_sleep(unsigned int csec) {
-	usleep(usec * 1000);
+sys_sleep(unsigned int msec) {
+	usleep(msec * 1000);
 }
 
 #else
@@ -23,8 +23,8 @@ sys_init() {
 }
 
 void
-sys_sleep(unsigned int csec) {
-	Sleep(csec);
+sys_sleep(unsigned int msec) {
+	Sleep(msec);
 }
 
 #endif

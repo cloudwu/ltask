@@ -4,6 +4,7 @@
 #include <lauxlib.h>
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "atomic.h"
 #include "queue.h"
@@ -539,7 +540,7 @@ ltask_deinit(lua_State *L) {
 		exclusive_release(&task->exclusives[i]);
 	}
 
-	timer_release(task->timer);
+	timer_destroy(task->timer);
 
 	service_destory(task->services);
 	queue_delete(task->schedule);

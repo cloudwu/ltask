@@ -74,6 +74,7 @@ atomic_ptr_cas(atomic_ptr *aptr, void *oval, void *nval) {
 #else
 
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stddef.h>
 
 typedef atomic_uintptr_t atomic_ptr;
