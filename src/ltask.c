@@ -26,8 +26,8 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 #define THREAD_WORKER(n) (MAX_EXCLUSIVE + (n))
 #define THREAD_EXCLUSIVE(n) (n)
 
-#define debug_printf(...)
-//#define debug_printf printf
+// #define debug_printf(...)
+#define debug_printf printf
 
 struct exclusive_thread {
 	struct ltask *task;
@@ -121,7 +121,8 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 			break;
 		}
-		if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
+		int status = service_status_get(P, msg->to);
+		if (status == SERVICE_STATUS_IDLE || status == SERVICE_STATUS_SCHEDULE) {
 			debug_printf("%x is in schedule\n", msg->to.id);
 			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
 			schedule_back(task, msg->to);
@@ -171,7 +172,6 @@ schedule_dispatch(struct ltask *task) {
 	// Step 2: Dispatch out message by service_done
 
 	struct service_pool *P = task->services;
-
 	for (i=0;i<done_job_n;i++) {
 		service_id id = done_job[i];
 		if (service_status_get(P, id) == SERVICE_STATUS_DEAD) {
