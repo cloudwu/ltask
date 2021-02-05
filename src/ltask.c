@@ -206,6 +206,7 @@ schedule_dispatch(struct ltask *task) {
 		for (i=0;i<task->config->worker;i++) {
 			service_id id = { job };
 			if (!worker_assign_job(&task->workers[i], id)) {
+				worker_wakeup(&task->workers[i]);
 				++assign_job;
 				job = queue_pop_int(task->schedule);
 				if (job == 0) {
