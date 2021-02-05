@@ -50,7 +50,7 @@ end
 function S.quit()
 	local s = ltask.current_session()
 	SERVICE_N = SERVICE_N - 1
-	assert(kill(s.from))
+	kill(s.from)
 	ltask.no_response()
 
 	if SERVICE_N == 0 then

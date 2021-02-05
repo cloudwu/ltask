@@ -1,6 +1,7 @@
 #include "sysinfo.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
+#define _WIN32_WINNT 0x0601
 
 #include <windows.h>
 

@@ -9,7 +9,9 @@ local MESSAGE_REQUEST <const> = 1
 local MESSAGE_RESPONSE <const> = 2
 local MESSAGE_ERROR <const> = 3
 
-local config = boot.init {}
+local config = boot.init {
+--	worker = 1,
+}
 config.service = "luasrc/service.lua"
 config.service_path = "luasrc/"
 
