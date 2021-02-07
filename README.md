@@ -34,7 +34,7 @@ return S
 local function boot()
 	print "Root Start"
 	print(os.date("%c", (ltask.now())))
-	local addr = S.spawn("user", "Hello")	-- spawm a new service `user`
+	local addr = S.spawn("user", "Hello")	-- spawn a new service `user`
 	print(ltask.call(addr, "ping", "PONG"))	-- request "ping" message
 end
 
