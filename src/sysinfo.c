@@ -11,6 +11,15 @@ sysinfo_ncores() {
 	return GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
 }
 
+#elif defined(__APPLE__)
+
+#include "unistd.h"
+
+int
+sysinfo_ncores() {
+	return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
 #else
 
 #include <sys/sysinfo.h>
