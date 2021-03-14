@@ -118,7 +118,7 @@ function ltask.call(address, ...)
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
-	local type, msg, sz = coroutine.yield()
+	local type, session, msg, sz = coroutine.yield()
 	if type == MESSAGE_RESPONSE then
 		return ltask.unpack_remove(msg, sz)
 	else
@@ -127,22 +127,25 @@ function ltask.call(address, ...)
 	end
 end
 
-local no_response_handler = coroutine.create(function(type, msg, sz)
-	while true do
+local ignore_response ; do
+	local function no_response_(type, session, msg, sz)
 		ltask.remove(msg, sz)
-		type, msg, sz = coroutine.yield()
 	end
-end)
+
+	local no_response_handler = coroutine.create(no_response_)
+
+	function ignore_response(session_id)
+		session_coroutine_suspend_lookup[session_id] = no_response_handler
+	end
+end
 
 function ltask.send(address, ...)
 	local r = post_message_(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
 	if r then
-		session_coroutine_suspend_lookup[session_id] = no_response_handler
+		ignore_response(session_id)
 		session_id = session_id + 1
-		return r
-	else
-		return r
 	end
+	return r
 end
 
 function ltask.syscall(address, ...)
@@ -151,7 +154,7 @@ function ltask.syscall(address, ...)
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
-	local type, msg, sz = coroutine.yield()
+	local type, session,  msg, sz = coroutine.yield()
 	if type == MESSAGE_RESPONSE then
 		return ltask.unpack_remove(msg, sz)
 	else
@@ -184,6 +187,117 @@ end
 
 function ltask.no_response()
 	session_coroutine_response[running_thread] = nil
+end
+
+do ------ request/select
+	local function send_requests(self, timeout)
+		local sessions = {}
+		self._sessions = sessions
+		local request_n = 0
+		local err
+		for i = 1, #self do
+			local req = self[i]
+			-- send request
+			local address = req[1]
+			local session = session_id
+			session_coroutine_suspend_lookup[session] = running_thread
+			session_id = session_id + 1
+
+			if not post_message(address, session, MESSAGE_REQUEST, ltask.pack(table.unpack(req, 2))) then
+				err = err or {}
+				req.error = true	-- address is dead
+				err[#err+1] = req
+			else
+				sessions[session] = req
+				request_n = request_n + 1
+			end
+		end
+		if timeout then
+			session_coroutine_suspend_lookup[session_id] = running_thread
+			ltask.timer_add(session_id, timeout)
+			self._timeout = session_id
+			session_id = session_id + 1
+		end
+		self._request = request_n
+		self._error = err
+	end
+
+	local function ignore_timout(self)
+		if self._timeout then
+			ignore_response(self._timeout)
+			self._timeout = nil
+		end
+	end
+
+	local function request_iter(self)
+		local timeout_session = self._timeout
+		return function()
+			if self._error then
+				-- invalid address
+				local e = table.remove(self._error)
+				if e then
+					return e
+				end
+				self._error = nil
+			end
+			if self._request == 0 then
+				-- done, finish
+				ignore_timout(self)
+				return
+			end
+
+			local type, session, msg, sz = coroutine.yield()
+			if session == timeout_session then
+				-- timeout, finish
+				self._timeout = nil
+				return
+			end
+			self._request = self._request - 1
+			local req = self._sessions[session]
+			if type == MESSAGE_RESPONSE then
+				self._sessions[session] = nil
+				return req, { ltask.unpack_remove(msg, sz) }
+			else -- type == MESSAGE_ERROR
+				req.error = (ltask.unpack_remove(msg, sz))	-- todo : multiple error objects
+				return req
+			end
+		end
+	end
+
+	local request_meta = {}	; request_meta.__index = request_meta
+
+	function request_meta:add(obj)
+		assert(self._request == nil)	-- select starts
+		self[#self+1] = obj
+		return self
+	end
+
+	request_meta.__call = request_meta.add
+
+	function request_meta:close()
+		if self._request > 0 then
+			for session, req in pairs(self._sessions) do
+				ignore_response(session)
+			end
+			self._request = 0
+		end
+		ignore_timout(self)
+	end
+
+	request_meta.__close = request_meta.close
+
+	function request_meta:select(timeout)
+		send_requests(self, timeout)
+		return request_iter(self), nil, nil, self
+	end
+
+	function ltask.request(obj)
+		local ret = setmetatable({}, request_meta)
+		if obj then
+			return ret(obj)
+		end
+		return ret
+	end
 end
 
 -------------
@@ -242,7 +356,7 @@ while not quit do
 			break
 		else
 			session_coroutine_suspend_lookup[session] = nil
- 			cont = resume_session(co, type, msg, sz)
+			cont = resume_session(co, type, session, msg, sz)
 		end
 	end
 

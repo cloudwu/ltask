@@ -66,6 +66,22 @@ local function boot()
 	print "Root init"
 	print(os.date("%c", (ltask.now())))
 	local addr = S.spawn("user", "Hello")
+
+	print("Begin")
+	local req = ltask.request
+		{ addr, "wait", 30, id = 1 }
+		{ addr, "wait", 20, id = 2 }
+		{ addr, "wait", 10, id = 3 }
+		{ addr, "wait", 5, id = 4 }
+
+	for req, resp in req:select(25) do
+		if resp then
+			print("REQ", req.id, resp[1])
+		else
+			print("ERR", req.id, req.error)
+		end
+	end
+
 	print(ltask.call(addr, "ping", "PONG"))
 	print(ltask.send(addr, "ping", "SEND"))
 	ltask.send(addr, "exit")

@@ -4,6 +4,14 @@ local S = setmetatable({}, { __gc = function() print "User exit" end } )
 
 print ("User init :", ...)
 
+function S.wait(ti)
+	if ti < 10 then
+		error("Error : " .. ti)
+	end
+	ltask.sleep(ti)
+	return ti
+end
+
 function S.ping(...)
 	ltask.timeout(10, function() print(1) end)
 	ltask.timeout(20, function() print(2) end)
