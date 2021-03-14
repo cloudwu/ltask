@@ -580,9 +580,9 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *filename
 	} else {
 		const char * err = NULL;
 		if (filename_source[0] == '@') {
-			service_loadfile(S, id, filename_source+1);
+			err = service_loadfile(S, id, filename_source+1);
 		} else {
-			service_loadstring(S, id, filename_source);
+			err = service_loadstring(S, id, filename_source);
 		}
 		if (err) {
 			lua_pushstring(L, err);
