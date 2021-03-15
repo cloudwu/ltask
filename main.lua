@@ -5,26 +5,13 @@ local SERVICE_ROOT <const> = 1
 local SERVICE_TIMER <const> = 2
 
 local MESSSAGE_SYSTEM <const> = 0
-local MESSAGE_REQUEST <const> = 1
-local MESSAGE_RESPONSE <const> = 2
-local MESSAGE_ERROR <const> = 3
 
 local config = boot.init {
 --	worker = 1,
 }
 config.service = "luasrc/service.lua"
 config.service_path = "luasrc/"
-
-config.SERVICE_ROOT = SERVICE_ROOT
-
-config.MESSSAGE_SYSTEM = MESSSAGE_SYSTEM
-config.MESSAGE_REQUEST = MESSAGE_REQUEST
-config.MESSAGE_RESPONSE = MESSAGE_RESPONSE
-config.MESSAGE_ERROR = MESSAGE_ERROR
-
-config.MESSAGE_SCHEDULE_NEW = 0
-config.MESSAGE_SCHEDULE_DEL = 1
-config.MESSAGE_SCHEDULE_HANG = 2
+config.bootstrap =  { "bootstrap" }
 
 local function bootstrap()
 	assert(boot.new_service("@" .. config.service, SERVICE_ROOT))

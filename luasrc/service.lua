@@ -343,6 +343,9 @@ end
 
 SESSION[MESSAGE_SYSTEM] = function (type, msg, sz)
 	send_response(system(ltask.unpack_remove(msg, sz)))
+	if service == nil then
+		quit = true
+	end
 end
 
 local function request(command, ...)
@@ -353,7 +356,7 @@ SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 	send_response(request(ltask.unpack_remove(msg, sz)))
 end
 
-while not quit do
+while true do
 	local from, session, type, msg, sz = ltask.recv_message()
 	local f = SESSION[type]
 	local cont
@@ -375,6 +378,10 @@ while not quit do
 	while cont do
 		yield_service()
 		cont = resume_session(running_thread)
+	end
+
+	if quit then
+		break
 	end
 	-- todo : inner thread (fork)
 	yield_service()

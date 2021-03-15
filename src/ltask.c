@@ -27,7 +27,7 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 #define THREAD_EXCLUSIVE(n) (n)
 
 #define debug_printf(...)
-//#define debug_printf(fmt, ...) printf("[SCHEDULE] " fmt __VA_OPT__(,) __VA_ARGS__)
+//#define xdebug_printf(fmt, ...) printf("[SCHEDULE] " fmt __VA_OPT__(,) __VA_ARGS__)
 
 struct exclusive_thread {
 	struct ltask *task;
@@ -79,6 +79,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 	switch (msg->type) {
 	case MESSAGE_SCHEDULE_NEW:
 		msg->to = service_new(P, sid.id);
+		debug_printf("New service %x.\n", msg->to.id);
 		if (msg->to.id == 0) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else {
@@ -86,6 +87,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 		}
 		break;
 	case MESSAGE_SCHEDULE_DEL:
+		debug_printf("Delete service %x.\n", sid.id);
 		service_delete(P, sid);
 		message_delete(msg);
 		service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
@@ -129,8 +131,9 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 			break;
 		}
-		if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-			debug_printf("Service %x is in schedule\n", msg->to.id);
+		int status = service_status_get(P, msg->to);
+		if (status == SERVICE_STATUS_IDLE) {
+			debug_printf("Service %x is back to schedule.\n", msg->to.id);
 			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
 			schedule_back(task, msg->to);
 		}
@@ -189,6 +192,12 @@ schedule_dispatch(struct ltask *task) {
 			switch (service_push_message(P, msg->to, msg)) {
 			case 0 :
 				// succ
+				debug_printf("Signal %x dead to root.\n", id.id);
+				if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
+					debug_printf("Service root is in schedule\n");
+					service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
+					schedule_back(task, msg->to);
+				}
 				break;
 			case 1 :
 				debug_printf("Root service is blocked, Service %x tries to signal it later.\n", id.id);
@@ -208,6 +217,7 @@ schedule_dispatch(struct ltask *task) {
 				debug_printf("Service %x is idle\n", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
+				debug_printf("Service %x back to schedule\n", id.id);
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
 				schedule_back(task, id);
 			}
@@ -332,14 +342,12 @@ thread_worker(void *ud) {
 		service_id id = worker_get_job(w);
 		if (id.id) {
 			w->running = id;
-			int done_status = SERVICE_STATUS_DONE;
-			int change_status = 1;
 			if (service_status_get(P, id) != SERVICE_STATUS_DEAD) {
 				debug_printf("Worker %d run service %x\n", w->worker_id, id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
 					debug_printf("Service %x quit\n", id.id);
-					done_status = SERVICE_STATUS_DEAD;
+					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
 						debug_printf("Root quit\n");
 						// root quit
@@ -347,27 +355,26 @@ thread_worker(void *ud) {
 					} else {
 						service_send_signal(P, id);
 					}
+				} else {
+					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
 			} else {
 				debug_printf("Service %x is dead on worker %d\n", id.id, w->worker_id);
-				// Do not touch this serivce, because root may delete it (after worker_complete_job) .
-				change_status = 0;
 			}
-			int scheduler_is_owner = 0;
+
 			while (worker_complete_job(w)) {
 				// Can't complete (running -> done)
 				if (!acquire_scheduler(w)) {
-					scheduler_is_owner = 1;
-					worker_complete_job(w);
+					if (worker_complete_job(w)) {
+						// Do it self
+						schedule_dispatch(w->task);
+						int fail = worker_complete_job(w);
+						assert(!fail);
+					}
+					schedule_dispatch_worker(w);
+					release_scheduler(w);
 					break;
 				}
-			}
-			if (change_status) {
-				service_status_set(P, id, done_status);
-			}
-			if (scheduler_is_owner) {
-				schedule_dispatch_worker(w);
-				release_scheduler(w);
 			}
 		} else {
 			// No job, try to acquire scheduler to find a job
@@ -379,10 +386,26 @@ thread_worker(void *ud) {
 			if (nojob) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
-				debug_printf("Worker %d is sleeping (%d)\n", w->worker_id, atomic_int_load(&w->task->active_worker));
-				worker_sleep(w);
-				atomic_int_inc(&w->task->active_worker);
-				debug_printf("Worker %d wakeup\n", w->worker_id);
+				if (atomic_int_load(&w->task->active_worker) == 0) {
+					debug_printf("Worker %d is the last active worker.\n", w->worker_id);
+					// It's the last active worker, try to find job again
+					atomic_int_inc(&w->task->active_worker);
+					// Acquire scheduler
+					if (!acquire_scheduler(w)) {
+						nojob = schedule_dispatch_worker(w);
+						release_scheduler(w);
+						if (!nojob) {
+							continue;
+						}
+					}
+					atomic_int_dec(&w->task->active_worker);
+				}
+				if (nojob) {
+					debug_printf("Worker %d is sleeping (%d)\n", w->worker_id, atomic_int_load(&w->task->active_worker));
+					worker_sleep(w);
+					atomic_int_inc(&w->task->active_worker);
+					debug_printf("Worker %d wakeup\n", w->worker_id);
+				}
 			}
 		}
 	}
