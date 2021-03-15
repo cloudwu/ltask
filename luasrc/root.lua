@@ -37,21 +37,18 @@ function S.spawn(name, ...)
 	return address
 end
 
-local function kill(address)
+function S.kill(address)
 	if ltask.post_message(0, address, config.MESSAGE_SCHEDULE_HANG) then
-		-- address must not in schedule
-		root.close_service(address)
-		ltask.post_message(0,address,config.MESSAGE_SCHEDULE_DEL)
 		return true
 	end
 	return false
 end
 
-function S.quit()
-	local s = ltask.current_session()
+ltask.signal_handler(function(from)
 	SERVICE_N = SERVICE_N - 1
-	kill(s.from)
-	ltask.no_response()
+	print("SERVICE DELETE", from)
+	root.close_service(from)
+	ltask.post_message(0,from,config.MESSAGE_SCHEDULE_DEL)
 
 	if SERVICE_N == 0 then
 		-- Only root alive
@@ -60,7 +57,7 @@ function S.quit()
 		end
 		ltask.quit()
 	end
-end
+end)
 
 local function boot()
 	print "Root init"

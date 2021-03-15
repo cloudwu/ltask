@@ -59,8 +59,16 @@ get_exclusive_thread_sending(struct ltask *task, int thread_id) {
 	return task->exclusives[thread_id].sending;
 }
 
+static inline void
+schedule_back(struct ltask *task, service_id id) {
+	int r = queue_push_int(task->schedule, (int)id.id);
+	// Must succ because task->schedule is large enough.
+	assert(r == 0);
+}
+
 static void
-dispatch_schedule_message(struct service_pool *P, service_id id, struct message *msg) {
+dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg) {
+	struct service_pool *P = task->services;
 	if (id.id != SERVICE_ID_ROOT) {
 		// only root can send schedule message
 		service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
@@ -83,7 +91,14 @@ dispatch_schedule_message(struct service_pool *P, service_id id, struct message 
 		service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
 		break;
 	case MESSAGE_SCHEDULE_HANG :
-		if (service_hang(P, sid)) {
+		if (service_status_get(P, sid) == SERVICE_STATUS_SCHEDULE) {
+			// In schedule
+			debug_printf("Hang up %x and it's already in schedule\n", sid.id);
+			service_status_set(P, sid, SERVICE_STATUS_DEAD);
+			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
+		} else if (service_hang(P, sid)) {
+			debug_printf("Hang up %x and put it back to schedule\n", sid.id);
+			schedule_back(task, sid);
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
@@ -95,19 +110,12 @@ dispatch_schedule_message(struct service_pool *P, service_id id, struct message 
 	}
 }
 
-static inline void
-schedule_back(struct ltask *task, service_id id) {
-	int r = queue_push_int(task->schedule, (int)id.id);
-	// Must succ because task->schedule is large enough.
-	assert(r == 0);
-}
-
 static void
 dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 	debug_printf("Message from %d to %d type=%d\n", id.id, msg->to.id, msg->type);
 	struct service_pool *P = task->services;
 	if (msg->to.id == SERVICE_ID_SYSTEM) {
-		dispatch_schedule_message(P, id, msg);
+		dispatch_schedule_message(task, id, msg);
 	} else {
 		switch (service_push_message(P, msg->to, msg)) {
 		case 0 :
@@ -176,12 +184,20 @@ schedule_dispatch(struct ltask *task) {
 	for (i=0;i<done_job_n;i++) {
 		service_id id = done_job[i];
 		if (service_status_get(P, id) == SERVICE_STATUS_DEAD) {
-			debug_printf("Service %x is dead\n", id.id);
-			// dead service may enter into schedule because of blocked response messages
-			if (!service_has_message(P, id)) {
-				service_delete(P, id);
-			} else {
+			struct message *msg = service_message_out(P, id);
+			assert(msg && msg->to.id == SERVICE_ID_ROOT && msg->type == MESSAGE_SIGNAL);
+			switch (service_push_message(P, msg->to, msg)) {
+			case 0 :
+				// succ
+				break;
+			case 1 :
+				debug_printf("Root service is blocked, Service %x tries to signal it later.\n", id.id);
 				schedule_back(task, id);
+				break;
+			default:
+				debug_printf("Root service is missing.\n");
+				service_delete(P, id);
+				break;
 			}
 		} else {
 			struct message *msg = service_message_out(P, id);
@@ -239,13 +255,11 @@ acquire_scheduler(struct worker_thread * worker) {
 	return 1;
 }
 
-static int
+static void
 release_scheduler(struct worker_thread * worker) {
-	int alive = service_alive(worker->task->services);
 	assert(atomic_int_load(&worker->task->schedule_owner) == THREAD_WORKER(worker->worker_id));
 	atomic_int_store(&worker->task->schedule_owner, THREAD_NONE);
-	debug_printf("Worker %d release (%d)\n", worker->worker_id, alive);
-	return alive == 0;
+	debug_printf("Worker %d release\n", worker->worker_id);
 }
 
 static void
@@ -254,13 +268,11 @@ acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	debug_printf("Exclusive %d acquire\n", exclusive->thread_id);
 }
 
-static int
+static void
 release_scheduler_exclusive(struct exclusive_thread * exclusive) {
-	int alive = service_alive(exclusive->task->services);
 	assert(atomic_int_load(&exclusive->task->schedule_owner) == THREAD_EXCLUSIVE(exclusive->thread_id));
 	atomic_int_store(&exclusive->task->schedule_owner, THREAD_NONE);
-	debug_printf("Exclusive %d release (%d)\n", exclusive->thread_id, alive);
-	return alive == 0;
+	debug_printf("Exclusive %d release\n", exclusive->thread_id);
 }
 
 static service_id
@@ -292,24 +304,18 @@ schedule_dispatch_worker(struct worker_thread *worker) {
 }
 
 static void
-close_service(struct service_pool *P, service_id id) {
-	service_close(P, id);
-	for (;;) {
-		struct message * m = service_pop_message(P, id);
-		if (m) {
-			// todo : response message (error)
-			message_delete(m);
-		} else {
-			break;
-		}
-	}
-}
-
-static void
 wakeup_all_workers(struct ltask *task) {
 	int i;
 	for (i=0;i<task->config->worker;i++) {
 		worker_wakeup(&task->workers[i]);
+	}
+}
+
+static void
+quit_all_workers(struct ltask *task) {
+	int i;
+	for (i=0;i<task->config->worker;i++) {
+		task->workers[i].term_signal = 1;
 	}
 }
 
@@ -326,19 +332,26 @@ thread_worker(void *ud) {
 		service_id id = worker_get_job(w);
 		if (id.id) {
 			w->running = id;
-			int isdead = 0;
+			int done_status = SERVICE_STATUS_DONE;
+			int change_status = 1;
 			if (service_status_get(P, id) != SERVICE_STATUS_DEAD) {
 				debug_printf("Worker %d run service %x\n", w->worker_id, id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
 					debug_printf("Service %x quit\n", id.id);
-					isdead = 1;
-					close_service(P, id);
+					done_status = SERVICE_STATUS_DEAD;
+					if (id.id == SERVICE_ID_ROOT) {
+						debug_printf("Root quit\n");
+						// root quit
+						break;
+					} else {
+						service_send_signal(P, id);
+					}
 				}
 			} else {
-				isdead = 1;
 				debug_printf("Service %x is dead on worker %d\n", id.id, w->worker_id);
-				close_service(P, id);
+				// Do not touch this serivce, because root may delete it (after worker_complete_job) .
+				change_status = 0;
 			}
 			int scheduler_is_owner = 0;
 			while (worker_complete_job(w)) {
@@ -349,19 +362,19 @@ thread_worker(void *ud) {
 					break;
 				}
 			}
-			service_status_set(P, id, isdead ? SERVICE_STATUS_DEAD : SERVICE_STATUS_DONE);
+			if (change_status) {
+				service_status_set(P, id, done_status);
+			}
 			if (scheduler_is_owner) {
 				schedule_dispatch_worker(w);
-				if (release_scheduler(w))
-					break;	// exit
+				release_scheduler(w);
 			}
 		} else {
 			// No job, try to acquire scheduler to find a job
 			int nojob = 1;
 			if (!acquire_scheduler(w)) {
 				nojob = schedule_dispatch_worker(w);
-				if (release_scheduler(w))
-					break;	// exit
+				release_scheduler(w);
 			}
 			if (nojob) {
 				// go to sleep
@@ -375,6 +388,7 @@ thread_worker(void *ud) {
 	}
 	worker_quit(w);
 	debug_printf("Quit Worker %d\n",w->worker_id);
+	quit_all_workers(w->task);
 	wakeup_all_workers(w->task);
 }
 
@@ -414,8 +428,7 @@ thread_exclusive(void *ud) {
 			if (isdead) {
 				service_delete(P, id);
 			}
-			if (release_scheduler_exclusive(e))
-				break;
+			release_scheduler_exclusive(e);
 		}
 	}
 	debug_printf("Exclusive quit %d\n", e->thread_id);
@@ -1004,16 +1017,30 @@ ltask_initservice(lua_State *L) {
 	return 0;
 }
 
+static void
+close_service_messages(struct service_pool *P, service_id id) {
+	for (;;) {
+		struct message * m = service_pop_message(P, id);
+		if (m) {
+			// todo : response message (error)
+			message_delete(m);
+		} else {
+			break;
+		}
+	}
+}
+
 static int
 ltask_closeservice(lua_State *L) {
-	const struct service_ud *S = getS(L);
-	unsigned int sid = luaL_checkinteger(L, 1);
-	service_id id = { sid };
-	if (service_status_get(S->task->services, id) != SERVICE_STATUS_DEAD) {
-		return luaL_error(L, "Hang %d before close it", sid);
-	}
-	service_close(S->task->services, id);
-	return 0;
+       const struct service_ud *S = getS(L);
+       unsigned int sid = luaL_checkinteger(L, 1);
+       service_id id = { sid };
+       if (service_status_get(S->task->services, id) != SERVICE_STATUS_DEAD) {
+               return luaL_error(L, "Hang %d before close it", sid);
+       }
+	   close_service_messages(S->task->services, id);
+	   service_delete(S->task->services, id);
+       return 0;
 }
 
 LUAMOD_API int

@@ -5,6 +5,7 @@ local MESSAGE_SYSTEM <const> = 0
 local MESSAGE_REQUEST <const> = 1
 local MESSAGE_RESPONSE <const> = 2
 local MESSAGE_ERROR <const> = 3
+local MESSAGE_SIGNAL <const> = 4
 
 local RECEIPT_DONE <const> = 1
 local RECEIPT_ERROR <const> = 2
@@ -128,11 +129,15 @@ function ltask.call(address, ...)
 end
 
 local ignore_response ; do
-	local function no_response_(type, session, msg, sz)
-		ltask.remove(msg, sz)
+	local function no_response_()
+		while true do
+			local type, session, msg, sz = coroutine.yield()
+			ltask.remove(msg, sz)
+		end
 	end
 
 	local no_response_handler = coroutine.create(no_response_)
+	coroutine.resume(no_response_handler)
 
 	function ignore_response(session_id)
 		session_coroutine_suspend_lookup[session_id] = no_response_handler
@@ -305,7 +310,6 @@ end
 local quit
 
 function ltask.quit()
-	ltask.send(SERVICE_ROOT, "quit")
 	quit = true
 end
 
@@ -313,6 +317,14 @@ local service
 
 function ltask.dispatch(handler)
 	service = handler
+end
+
+function ltask.signal_handler(f)	-- root only
+	SESSION[MESSAGE_SIGNAL] = function (type, msg, sz)
+		local from = session_coroutine_address[running_thread]
+		local session = session_coroutine_response[running_thread]
+		f(from, session)
+	end
 end
 
 local function system(command, filename, ...)

@@ -26,7 +26,6 @@ struct service {
 };
 
 struct service_pool {
-	int alive;
 	int mask;
 	int queue_length;
 	unsigned int id;
@@ -40,7 +39,6 @@ service_create(struct ltask_config *config) {
 	tmp.mask = config->max_service - 1;
 	tmp.id = 0;
 	tmp.queue_length = config->queue;
-	tmp.alive = 0;
 	tmp.s = (struct service **)malloc(sizeof(struct service *) * config->max_service);
 	if (tmp.s == NULL)
 		return NULL;
@@ -86,11 +84,6 @@ service_destory(struct service_pool *p) {
 	}
 	free(p->s);
 	free(p);
-}
-
-int
-service_alive(struct service_pool *p) {
-	return p->alive;
 }
 
 static int
@@ -141,7 +134,6 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->thread_id = -1;
 	*service_slot(p, id) = s;
 	result.id = id;
-	++p->alive;
 	return result;
 }
 
@@ -218,7 +210,6 @@ service_delete(struct service_pool *p, service_id id) {
 	if (s) {
 		*service_slot(p, id.id) = NULL;
 		free_service(s);
-		--p->alive;
 	}
 }
 
@@ -395,6 +386,24 @@ service_has_message(struct service_pool *p, service_id id) {
 	return queue_length(s->msg) > 0;
 }
 
+void
+service_send_signal(struct service_pool *p, service_id id) {
+	struct service *s = get_service(p, id);
+	if (s == NULL)
+		return;
+	if (s->out)
+		message_delete(s->out);
+	struct message msg;
+	msg.from = id;
+	msg.to.id = SERVICE_ID_ROOT;
+	msg.session = 0;
+	msg.type = MESSAGE_SIGNAL;
+	msg.msg = NULL;
+	msg.sz = 0;
+
+	s->out = message_new(&msg);
+}
+
 int
 service_hang(struct service_pool *p, service_id id) {
 	struct service *s = get_service(p, id);
@@ -404,8 +413,10 @@ service_hang(struct service_pool *p, service_id id) {
 	case SERVICE_STATUS_UNINITIALIZED:
 	case SERVICE_STATUS_IDLE:
 	case SERVICE_STATUS_SCHEDULE:
-	case SERVICE_STATUS_DEAD:
 		s->status = SERVICE_STATUS_DEAD;
+		service_send_signal(p, id);
+		return 0;
+	case SERVICE_STATUS_DEAD:
 		return 0;
 	}
 	// service is running

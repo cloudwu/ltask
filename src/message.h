@@ -10,6 +10,7 @@ typedef unsigned int session_t;
 #define MESSAGE_REQUEST 1
 #define MESSAGE_RESPONSE 2
 #define MESSAGE_ERROR 3
+#define MESSAGE_SIGNAL 4
 
 #define MESSAGE_RECEIPT_NONE 0
 #define MESSAGE_RECEIPT_DONE 1
