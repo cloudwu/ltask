@@ -1,5 +1,4 @@
 local SERVICE_ROOT <const> = 1
-local SERVICE_TIMER <const> = 2
 
 local MESSAGE_SYSTEM <const> = 0
 local MESSAGE_REQUEST <const> = 1

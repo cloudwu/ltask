@@ -22,10 +22,13 @@ do
 	ltask.suspend(0, coroutine.create(init_receipt))
 end
 
+local function searchpath(name)
+	return assert(package.searchpath(name, config.service_path))
+end
+
 local function init_service(address, name, ...)
-	root.init_service(address, "@"..config.service)
-	local path = assert(package.searchpath(name, config.service_path))
-	ltask.syscall(address, "init", path, ...)
+	root.init_service(address, "@"..searchpath "service")
+	ltask.syscall(address, "init", searchpath(name), ...)
 end
 
 -- todo: manage services
@@ -59,7 +62,7 @@ ltask.signal_handler(function(from)
 
 	if SERVICE_N == 0 then
 		-- Only root alive
-		for _, id in ipairs(config.exclusive) do
+		for id = 2, 1 + #config.exclusive do
 			ltask.send(id, "QUIT")
 		end
 		ltask.quit()

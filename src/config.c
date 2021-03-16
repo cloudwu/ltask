@@ -49,12 +49,12 @@ config_load(lua_State *L, int index, struct ltask_config *config) {
 	config->max_service = config_getint(L, index, "max_service", DEFAULT_MAX_SERVICE);
 	config->max_service = align_pow2(config->max_service);
 	
-	lua_newtable(L);
 	lua_pushinteger(L, config->worker);
-	lua_setfield(L, -2, "worker");
+	lua_setfield(L, index, "worker");
 	lua_pushinteger(L, config->queue);
-	lua_setfield(L, -2, "queue");
+	lua_setfield(L, index, "queue");
 	lua_pushinteger(L, config->max_service);
-	lua_setfield(L, -2, "max_service");
+	lua_setfield(L, index, "max_service");
+	lua_pushvalue(L, index);
 }
 
