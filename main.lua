@@ -2,22 +2,24 @@ local boot = require "ltask.bootstrap"
 local ltask = require "ltask"
 
 local SERVICE_ROOT <const> = 1
-local SERVICE_TIMER <const> = 2
-
 local MESSSAGE_SYSTEM <const> = 0
 
-local config = boot.init {
---	worker = 1,
-}
-config.service = "luasrc/service.lua"
-config.service_path = "luasrc/?.lua"
-config.bootstrap =  { "bootstrap" }
+local config = {}
+
+local function init_config()
+	local config_file = assert(arg[1])
+	assert(loadfile(config_file, "t", config))()
+end
+
+local function searchpath(name)
+	return assert(package.searchpath(name, config.service_path))
+end
 
 local function bootstrap()
-	assert(boot.new_service("@" .. config.service, SERVICE_ROOT))
+	assert(boot.new_service("@" ..searchpath "service", SERVICE_ROOT))
 	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
-	local init_msg, sz = ltask.pack("init", "luasrc/root.lua", config)
+	local init_msg, sz = ltask.pack("init", searchpath "root", config)
 	-- self bootstrap
 	boot.post_message {
 		from = SERVICE_ROOT,
@@ -29,17 +31,19 @@ local function bootstrap()
 	}
 end
 
-config.exclusive = {}
-
-local function exclusive_thread( name, id )
-	local sid = boot.new_service("@luasrc/" .. name .. ".lua", id)
+local function exclusive_thread(name, id)
+	local sid = boot.new_service("@" .. searchpath(name), id)
 	assert(sid == id)
 	boot.new_thread(sid)
-	table.insert(config.exclusive, sid)
 end
 
+init_config()
+boot.init(config)
 boot.init_timer()
-exclusive_thread ("timer", SERVICE_TIMER)
+
+for i, name in ipairs(config.exclusive) do
+	exclusive_thread(name, i+ 1)
+end
 
 bootstrap()	-- launch root
 
