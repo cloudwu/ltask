@@ -1,3 +1,4 @@
 service_path = "luasrc/?.lua;examples/timer/?.lua"
 bootstrap = { "bootstrap" }
 exclusive = { "timer" }
+logfile = "log.txt"

@@ -16,6 +16,7 @@
 #include "lua-seri.h"
 #include "timer.h"
 #include "sysapi.h"
+#include "debuglog.h"
 
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
@@ -26,10 +27,18 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 #define THREAD_WORKER(n) (MAX_EXCLUSIVE + (n))
 #define THREAD_EXCLUSIVE(n) (n)
 
-#define debug_printf(...)
-//#define xdebug_printf(fmt, ...) printf("[SCHEDULE] " fmt __VA_OPT__(,) __VA_ARGS__)
+#ifndef DEBUGLOG
+
+#define debug_printf(logger, fmt, ...)
+
+#else
+
+#define debug_printf dlog_write
+
+#endif
 
 struct exclusive_thread {
+	struct debug_logger * logger;
 	struct ltask *task;
 	int thread_id;
 	service_id service;
@@ -43,8 +52,11 @@ struct ltask {
 	struct service_pool *services;
 	struct queue *schedule;
 	struct timer *timer;
+	struct debug_logger *logger;
 	atomic_int schedule_owner;
 	atomic_int active_worker;
+	atomic_int thread_count;
+	FILE *logfile;
 };
 
 struct service_ud {
@@ -79,7 +91,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 	switch (msg->type) {
 	case MESSAGE_SCHEDULE_NEW:
 		msg->to = service_new(P, sid.id);
-		debug_printf("New service %x.\n", msg->to.id);
+		debug_printf(task->logger, "New service %x", msg->to.id);
 		if (msg->to.id == 0) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else {
@@ -87,7 +99,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 		}
 		break;
 	case MESSAGE_SCHEDULE_DEL:
-		debug_printf("Delete service %x.\n", sid.id);
+		debug_printf(task->logger, "Delete service %x", sid.id);
 		service_delete(P, sid);
 		message_delete(msg);
 		service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
@@ -95,11 +107,11 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 	case MESSAGE_SCHEDULE_HANG :
 		if (service_status_get(P, sid) == SERVICE_STATUS_SCHEDULE) {
 			// In schedule
-			debug_printf("Hang up %x and it's already in schedule\n", sid.id);
+			debug_printf(task->logger, "Hang up %x and it's already in schedule", sid.id);
 			service_status_set(P, sid, SERVICE_STATUS_DEAD);
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else if (service_hang(P, sid)) {
-			debug_printf("Hang up %x and put it back to schedule\n", sid.id);
+			debug_printf(task->logger, "Hang up %x and put it back to schedule", sid.id);
 			schedule_back(task, sid);
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else {
@@ -114,7 +126,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 
 static void
 dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
-	debug_printf("Message from %d to %d type=%d\n", id.id, msg->to.id, msg->type);
+	debug_printf(task->logger, "Message from %d to %d type=%d", id.id, msg->to.id, msg->type);
 	struct service_pool *P = task->services;
 	if (msg->to.id == SERVICE_ID_SYSTEM) {
 		dispatch_schedule_message(task, id, msg);
@@ -133,7 +145,7 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 		}
 		int status = service_status_get(P, msg->to);
 		if (status == SERVICE_STATUS_IDLE) {
-			debug_printf("Service %x is back to schedule.\n", msg->to.id);
+			debug_printf(task->logger, "Service %x is back to schedule", msg->to.id);
 			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
 			schedule_back(task, msg->to);
 		}
@@ -141,7 +153,8 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 }
 
 static void
-dispatch_exclusive_sending(struct ltask *task, struct queue *sending) {
+dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
+	struct ltask *task = e->task;
 	struct service_pool *P = task->services;
 	int len = queue_length(sending);
 	int i;
@@ -159,7 +172,7 @@ dispatch_exclusive_sending(struct ltask *task, struct queue *sending) {
 			break;
 		}
 		if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-			debug_printf("Service %x is in schedule\n", msg->to.id);
+			debug_printf(e->logger, "Service %x is in schedule", msg->to.id);
 			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
 			schedule_back(task, msg->to);
 		}
@@ -175,7 +188,7 @@ schedule_dispatch(struct ltask *task) {
 	for (i=0;i<task->config->worker;i++) {
 		service_id job = worker_done_job(&task->workers[i]);
 		if (job.id) {
-			debug_printf("Service %x is done\n", job.id);
+			debug_printf(task->logger, "Service %x is done", job.id);
 			done_job[done_job_n++] = job;
 		}
 	}
@@ -192,19 +205,19 @@ schedule_dispatch(struct ltask *task) {
 			switch (service_push_message(P, msg->to, msg)) {
 			case 0 :
 				// succ
-				debug_printf("Signal %x dead to root.\n", id.id);
+				debug_printf(task->logger, "Signal %x dead to root", id.id);
 				if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-					debug_printf("Service root is in schedule\n");
+					debug_printf(task->logger, "Service root is in schedule");
 					service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
 					schedule_back(task, msg->to);
 				}
 				break;
 			case 1 :
-				debug_printf("Root service is blocked, Service %x tries to signal it later.\n", id.id);
+				debug_printf(task->logger, "Root service is blocked, Service %x tries to signal it later", id.id);
 				schedule_back(task, id);
 				break;
 			default:
-				debug_printf("Root service is missing.\n");
+				debug_printf(task->logger, "Root service is missing");
 				service_delete(P, id);
 				break;
 			}
@@ -214,10 +227,10 @@ schedule_dispatch(struct ltask *task) {
 				dispatch_out_message(task, id, msg);
 			}
 			if (!service_has_message(P, id)) {
-				debug_printf("Service %x is idle\n", id.id);
+				debug_printf(task->logger, "Service %x is idle", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
-				debug_printf("Service %x back to schedule\n", id.id);
+				debug_printf(task->logger, "Service %x back to schedule", id.id);
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
 				schedule_back(task, id);
 			}
@@ -240,7 +253,7 @@ schedule_dispatch(struct ltask *task) {
 		// Todo : record assign history, and try to always assign one job to the same worker.
 		service_id id = { job };
 		if (!worker_assign_job(&task->workers[i], id)) {
-			debug_printf("Assign %x to worker %d\n", id.id, i);
+			debug_printf(task->logger, "Assign %x to worker %d", id.id, i);
 			worker_wakeup(&task->workers[i]);
 			++assign_job;
 			job = 0;
@@ -258,7 +271,7 @@ static int
 acquire_scheduler(struct worker_thread * worker) {
 	if (atomic_int_load(&worker->task->schedule_owner) == THREAD_NONE) {
 		if (atomic_int_cas(&worker->task->schedule_owner, THREAD_NONE, THREAD_WORKER(worker->worker_id))) {
-			debug_printf("Worker %d acquire\n", worker->worker_id);
+			debug_printf(worker->logger, "Acquire schedule");
 			return 0;
 		}
 	}
@@ -269,20 +282,20 @@ static void
 release_scheduler(struct worker_thread * worker) {
 	assert(atomic_int_load(&worker->task->schedule_owner) == THREAD_WORKER(worker->worker_id));
 	atomic_int_store(&worker->task->schedule_owner, THREAD_NONE);
-	debug_printf("Worker %d release\n", worker->worker_id);
+	debug_printf(worker->logger, "Release schedule");
 }
 
 static void
 acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	while (!atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {}
-	debug_printf("Exclusive %d acquire\n", exclusive->thread_id);
+	debug_printf(exclusive->logger, "Acquire schedule");
 }
 
 static void
 release_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	assert(atomic_int_load(&exclusive->task->schedule_owner) == THREAD_EXCLUSIVE(exclusive->thread_id));
 	atomic_int_store(&exclusive->task->schedule_owner, THREAD_NONE);
-	debug_printf("Exclusive %d release\n", exclusive->thread_id);
+	debug_printf(exclusive->logger, "Release schedule");
 }
 
 static service_id
@@ -304,7 +317,7 @@ schedule_dispatch_worker(struct worker_thread *worker) {
 	if (!worker_has_job(worker)) {
 		service_id job = steal_job(worker);
 		if (job.id) {
-			debug_printf("Worker %d steal service %x\n", worker->worker_id, job.id);
+			debug_printf(worker->logger, "Steal service %x", job.id);
 			worker_assign_job(worker, job);
 		} else {
 			return 1;
@@ -337,19 +350,21 @@ thread_worker(void *ud) {
 
 	int thread_id = THREAD_WORKER(w->worker_id);
 	for (;;) {
-		if (w->term_signal)
+		if (w->term_signal) {
+			atomic_int_dec(&w->task->thread_count);
 			return;
+		}
 		service_id id = worker_get_job(w);
 		if (id.id) {
 			w->running = id;
 			if (service_status_get(P, id) != SERVICE_STATUS_DEAD) {
-				debug_printf("Worker %d run service %x\n", w->worker_id, id.id);
+				debug_printf(w->logger, "Run service %x", id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
-					debug_printf("Service %x quit\n", id.id);
+					debug_printf(w->logger, "Service %x quit", id.id);
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
-						debug_printf("Root quit\n");
+						debug_printf(w->logger, "Root quit");
 						// root quit
 						break;
 					} else {
@@ -359,7 +374,7 @@ thread_worker(void *ud) {
 					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
 			} else {
-				debug_printf("Service %x is dead on worker %d\n", id.id, w->worker_id);
+				debug_printf(w->logger, "Service %x is dead", id.id);
 			}
 
 			while (worker_complete_job(w)) {
@@ -387,7 +402,7 @@ thread_worker(void *ud) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
 				if (atomic_int_load(&w->task->active_worker) == 0) {
-					debug_printf("Worker %d is the last active worker.\n", w->worker_id);
+					debug_printf(w->logger, "It is the last active worker");
 					// It's the last active worker, try to find job again
 					atomic_int_inc(&w->task->active_worker);
 					// Acquire scheduler
@@ -401,18 +416,19 @@ thread_worker(void *ud) {
 					atomic_int_dec(&w->task->active_worker);
 				}
 				if (nojob) {
-					debug_printf("Worker %d is sleeping (%d)\n", w->worker_id, atomic_int_load(&w->task->active_worker));
+					debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
 					worker_sleep(w);
 					atomic_int_inc(&w->task->active_worker);
-					debug_printf("Worker %d wakeup\n", w->worker_id);
+					debug_printf(w->logger, "Wakeup");
 				}
 			}
 		}
 	}
 	worker_quit(w);
-	debug_printf("Quit Worker %d\n",w->worker_id);
+	debug_printf(w->logger, "Quit");
 	quit_all_workers(w->task);
 	wakeup_all_workers(w->task);
+	atomic_int_dec(&w->task->thread_count);
 }
 
 static void
@@ -436,7 +452,7 @@ thread_exclusive(void *ud) {
 			if (message_out) {
 				dispatch_out_message(e->task, id, message_out);
 			}
-			dispatch_exclusive_sending(e->task, sending);
+			dispatch_exclusive_sending(e, sending);
 			int jobs = schedule_dispatch(e->task);
 			int active_worker = atomic_int_load(&e->task->active_worker);
 			int sleeping_worker = total_worker - active_worker;
@@ -454,8 +470,9 @@ thread_exclusive(void *ud) {
 			release_scheduler_exclusive(e);
 		}
 	}
-	debug_printf("Exclusive quit %d\n", e->thread_id);
+	debug_printf(e->logger, "Quit");
 	wakeup_all_workers(e->task);
+	atomic_int_dec(&e->task->thread_count);
 }
 
 static int
@@ -472,12 +489,20 @@ ltask_init(lua_State *L) {
 	struct ltask *task = (struct ltask *)lua_newuserdatauv(L, sizeof(*task), 0);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_GLOBAL");
 
+	task->logger = dlog_new("SCHEDULE", -1);
 	task->config = config;
 	task->workers = (struct worker_thread *)lua_newuserdatauv(L, config->worker * sizeof(struct worker_thread), 0);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_WORKERS");
 	task->services = service_create(config);
 	task->schedule = queue_new_int(config->max_service);
 	task->timer = NULL;
+
+	if (lua_getfield(L, 1, "logfile") == LUA_TSTRING) {
+		task->logfile = fopen(lua_tostring(L, -1), "w");
+	} else {
+		task->logfile = NULL;
+	}
+	lua_pop(L, 1);
 
 	int i;
 	for (i=0;i<config->worker;i++) {
@@ -486,6 +511,7 @@ ltask_init(lua_State *L) {
 
 	atomic_int_init(&task->schedule_owner, THREAD_NONE);
 	atomic_int_init(&task->active_worker, 0);
+	atomic_int_init(&task->thread_count, 0);
 
 	for (i=0;i<MAX_EXCLUSIVE;i++) {
 		task->exclusives[i].task = NULL;
@@ -530,13 +556,14 @@ ltask_exclusive(lua_State *L) {
 	}
 	struct exclusive_thread *e = &task->exclusives[ecount];
 	e->service.id = luaL_checkinteger(L, 1);
-	debug_printf("Exclusive %d : service %x\n", ecount,  e->service.id);
 	if (service_status_get(task->services, e->service) != SERVICE_STATUS_IDLE) {
 		return luaL_error(L, "Service is uninitialized");
 	}
 	service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive);
 	service_status_set(task->services, e->service, SERVICE_STATUS_EXCLUSIVE);
 	e->task = task;
+	e->logger = dlog_new("EXCLUSIVE", ecount);
+	debug_printf(e->logger, "New service %x\n", e->service.id);
 	e->thread_id = ecount;
 	e->sending = queue_new_ptr(task->config->queue_sending);
 	if (ecount+1 < MAX_EXCLUSIVE) {
@@ -560,12 +587,30 @@ exclusive_release(struct exclusive_thread *ethread) {
 	}
 }
 
+static void
+thread_logger(void *ud) {
+	struct ltask *t = (struct ltask *)ud;
+	FILE *f = t->logfile;
+	while (atomic_int_load(&t->thread_count) > 0) {
+		dlog_writefile(f);
+		sys_sleep(100);	// sleep 0.1s
+	}
+	dlog_close(f);
+	if (f)
+		fclose(f);
+}
+
 static int
 ltask_run(lua_State *L) {
+#ifdef DEBUGLOG
+	int logthread = 1;
+#else
+	int logthread = 0;
+#endif
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
 	
 	int ecount = exclusive_count(task);
-	int threads_count = task->config->worker + ecount;
+	int threads_count = task->config->worker + ecount + logthread;
 
 	struct thread * t = (struct thread *)lua_newuserdatauv(L, threads_count * sizeof(struct thread), 0);
 	int i;
@@ -576,6 +621,11 @@ ltask_run(lua_State *L) {
 	for (i=0;i<task->config->worker;i++) {
 		t[ecount + i].func = thread_worker;
 		t[ecount + i].ud = (void *)&task->workers[i];
+	}
+	if (logthread) {
+		atomic_int_store(&task->thread_count, threads_count-1);
+		t[threads_count-1].func = thread_logger;
+		t[threads_count-1].ud = (void *)task;
 	}
 	thread_join(t, threads_count);
 	return 0;
@@ -676,7 +726,7 @@ lpost_message(lua_State *L) {
 		return luaL_error(L, "push message failed");
 	}
 	if (service_status_get(task->services, msg.to) == SERVICE_STATUS_IDLE) {
-		debug_printf("Service %x is in schedule\n", msg.to.id);
+		debug_printf(task->logger, "Service %x is in schedule", msg.to.id);
 		service_status_set(task->services, msg.to, SERVICE_STATUS_SCHEDULE);
 		schedule_back(task, msg.to);
 	}

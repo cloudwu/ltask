@@ -4,11 +4,13 @@
 #include "atomic.h"
 #include "thread.h"
 #include "service.h"
+#include "debuglog.h"
 
 struct ltask;
 
 struct worker_thread {
 	struct ltask *task;
+	struct debug_logger *logger;
 	int worker_id;
 	service_id running;
 	atomic_int service_ready;
@@ -21,6 +23,7 @@ struct worker_thread {
 static inline void
 worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->task = task;
+	worker->logger = dlog_new("WORKER", worker_id);
 	worker->worker_id = worker_id;
 	atomic_int_init(&worker->service_ready, 0);
 	atomic_int_init(&worker->service_done, 0);

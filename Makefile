@@ -1,4 +1,6 @@
 CFLAGS=-g -Wall
+# CFLAGS+=-DDEBUGLOG
+
 LUAINC=-I/usr/local/include
 
 ifeq ($(OS),Windows_NT)
@@ -24,7 +26,8 @@ SRCS=\
  src/message.c \
  src/systime.c \
  src/timer.c \
- src/sysapi.c
+ src/sysapi.c \
+ src/debuglog.c
 
 ltask.$(SO) : $(SRCS)
 	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB) $(LIBS)
