@@ -10,7 +10,7 @@ local config = boot.init {
 --	worker = 1,
 }
 config.service = "luasrc/service.lua"
-config.service_path = "luasrc/"
+config.service_path = "luasrc/?.lua"
 config.bootstrap =  { "bootstrap" }
 
 local function bootstrap()
