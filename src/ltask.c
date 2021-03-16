@@ -497,7 +497,7 @@ ltask_init(lua_State *L) {
 	task->schedule = queue_new_int(config->max_service);
 	task->timer = NULL;
 
-	if (lua_getfield(L, 1, "logfile") == LUA_TSTRING) {
+	if (lua_getfield(L, 1, "debuglog") == LUA_TSTRING) {
 		task->logfile = fopen(lua_tostring(L, -1), "w");
 	} else {
 		task->logfile = NULL;
@@ -588,6 +588,14 @@ exclusive_release(struct exclusive_thread *ethread) {
 }
 
 static void
+close_logger(struct ltask *t) {
+	FILE *f = t->logfile;
+	dlog_close(f);
+	if (f)
+		fclose(f);
+}
+
+static void
 thread_logger(void *ud) {
 	struct ltask *t = (struct ltask *)ud;
 	FILE *f = t->logfile;
@@ -595,9 +603,7 @@ thread_logger(void *ud) {
 		dlog_writefile(f);
 		sys_sleep(100);	// sleep 0.1s
 	}
-	dlog_close(f);
-	if (f)
-		fclose(f);
+	close_logger(t);
 }
 
 static int
@@ -628,6 +634,9 @@ ltask_run(lua_State *L) {
 		t[threads_count-1].ud = (void *)task;
 	}
 	thread_join(t, threads_count);
+	if (!logthread) {
+		close_logger(task);
+	}
 	return 0;
 }
 
