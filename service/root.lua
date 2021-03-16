@@ -10,6 +10,7 @@ local MESSAGE_SCHEDULE_DEL <const> = 1
 local MESSAGE_SCHEDULE_HANG <const> = 2
 
 local S = {}
+local mapped = {}
 
 do
 	-- root init response to itself
@@ -28,7 +29,12 @@ end
 
 local function init_service(address, name, ...)
 	root.init_service(address, "@"..searchpath "service")
-	ltask.syscall(address, "init", searchpath(name), ...)
+	ltask.syscall(address, "init", {
+		path = config.lua_path,
+		cpath = config.lua_cpath,
+		filename = searchpath(name),
+		args = {...},
+	})
 end
 
 -- todo: manage services
@@ -54,6 +60,18 @@ function S.kill(address)
 	return false
 end
 
+function S.register(name)
+	local session = ltask.current_session()
+	if mapped[name] then
+		error(("Name `%s` already exists."):format(name))
+	end
+	mapped[name] = session.from
+end
+
+function S.query(name)
+	return mapped[name]
+end
+
 ltask.signal_handler(function(from)
 --	print("SERVICE DELETE", from)
 	SERVICE_N = SERVICE_N - 1
@@ -70,6 +88,9 @@ ltask.signal_handler(function(from)
 end)
 
 local function boot()
+	for i, name in ipairs(config.exclusive) do
+		mapped[name] = i + 1
+	end
 	S.spawn(table.unpack(config.bootstrap))
 end
 

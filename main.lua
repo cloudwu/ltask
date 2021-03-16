@@ -19,7 +19,12 @@ local function bootstrap()
 	assert(boot.new_service("@" ..searchpath "service", SERVICE_ROOT))
 	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
-	local init_msg, sz = ltask.pack("init", searchpath "root", config)
+	local init_msg, sz = ltask.pack("init", {
+		path = config.lua_path,
+		cpath = config.lua_cpath,
+		filename = searchpath "root",
+		args = {config}
+	})
 	-- self bootstrap
 	boot.post_message {
 		from = SERVICE_ROOT,
