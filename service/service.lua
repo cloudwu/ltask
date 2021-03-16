@@ -326,12 +326,21 @@ function ltask.signal_handler(f)	-- root only
 	end
 end
 
-local function system(command, filename, ...)
+local function system(command, t)
 	if service == nil then
 		-- The first system message
 		assert(command == "init")
-		local f = assert(loadfile(filename))
-		local r = f(...)
+		if t.path then
+			package.path = t.path
+		end
+		if t.cpath then
+			package.cpath = t.cpath
+		end
+		local _require = _G.require
+		_G.require = require "ltask.require"
+		local f = assert(loadfile(t.filename))
+		local r = f(table.unpack(t.args))
+		_G.require = _require
 		if service == nil then
 			service = r
 		end
