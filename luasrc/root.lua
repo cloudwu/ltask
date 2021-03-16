@@ -24,7 +24,8 @@ end
 
 local function init_service(address, name, ...)
 	root.init_service(address, "@"..config.service)
-	ltask.syscall(address, "init", config.service_path .. name..".lua", ...)
+	local path = assert(package.searchpath(name, config.service_path))
+	ltask.syscall(address, "init", path, ...)
 end
 
 -- todo: manage services
