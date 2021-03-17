@@ -27,6 +27,7 @@ SRCS=\
  src/systime.c \
  src/timer.c \
  src/sysapi.c \
+ src/logqueue.c \
  src/debuglog.c
 
 ltask.$(SO) : $(SRCS)

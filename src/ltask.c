@@ -17,6 +17,7 @@
 #include "timer.h"
 #include "sysapi.h"
 #include "debuglog.h"
+#include "logqueue.h"
 
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
@@ -53,6 +54,7 @@ struct ltask {
 	struct queue *schedule;
 	struct timer *timer;
 	struct debug_logger *logger;
+	struct logqueue *lqueue;
 	atomic_int schedule_owner;
 	atomic_int active_worker;
 	atomic_int thread_count;
@@ -489,6 +491,7 @@ ltask_init(lua_State *L) {
 	struct ltask *task = (struct ltask *)lua_newuserdatauv(L, sizeof(*task), 0);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_GLOBAL");
 
+	task->lqueue = logqueue_new();
 	task->logger = dlog_new("SCHEDULE", -1);
 	task->config = config;
 	task->workers = (struct worker_thread *)lua_newuserdatauv(L, config->worker * sizeof(struct worker_thread), 0);
@@ -637,6 +640,7 @@ ltask_run(lua_State *L) {
 	if (!logthread) {
 		close_logger(task);
 	}
+	logqueue_delete(task->lqueue);
 	return 0;
 }
 
@@ -1047,8 +1051,48 @@ ltask_now(lua_State *L) {
 	uint32_t start = timer_starttime(TI);
 	uint64_t now = timer_now(TI);
 	lua_pushinteger(L, start + now / 100);
-	lua_pushinteger(L, start * 100 + now);
+	lua_pushinteger(L, (uint64_t)start * 100 + now);
 	return 2;
+}
+
+static int
+ltask_pushlog(lua_State *L) {
+	struct logmessage msg;
+	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
+	msg.msg = lua_touserdata(L, 1);
+	msg.sz = (uint32_t)luaL_checkinteger(L, 2);
+	const struct service_ud *S = getS(L);
+	msg.id = S->id;
+	struct timer *TI = S->task->timer;
+	struct logqueue *q = S->task->lqueue;
+	if (TI == NULL) {
+		msg.timestamp = 0;
+	} else {
+		msg.timestamp = timer_now(TI);
+	}
+	if (logqueue_push(q, &msg)) {
+		return luaL_error(L, "log error");
+	}
+	return 0;
+}
+
+static int
+ltask_poplog(lua_State *L) {
+	struct logmessage msg;
+	const struct service_ud *S = getS(L);
+	struct logqueue *q = S->task->lqueue;
+	struct timer *TI = S->task->timer;
+	uint64_t start = 0;
+	if (TI) {
+		start = (uint64_t)timer_starttime(TI) * 100;
+	}
+	if (logqueue_pop(q, &msg))
+		return 0;
+	lua_pushinteger(L, msg.timestamp + start);
+	lua_pushinteger(L, msg.id.id);
+	lua_pushlightuserdata(L, msg.msg);
+	lua_pushinteger(L, msg.sz);
+	return 4;
 }
 
 LUAMOD_API int
@@ -1066,6 +1110,8 @@ luaopen_ltask(lua_State *L) {
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
+		{ "pushlog", ltask_pushlog },
+		{ "poplog", ltask_poplog },
 		{ NULL, NULL },
 	};
 

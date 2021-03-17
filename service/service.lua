@@ -193,6 +193,10 @@ function ltask.no_response()
 	session_coroutine_response[running_thread] = nil
 end
 
+function ltask.log(...)
+	ltask.pushlog(ltask.pack(...))
+end
+
 do ------ request/select
 	local function send_requests(self, timeout)
 		local sessions = {}
