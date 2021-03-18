@@ -35,6 +35,8 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 
 static inline void
 worker_sleep(struct worker_thread *w) {
+	if  (w->term_signal)
+		return;
 	w->sleeping = 1;
 	thread_event_wait(&w->trigger);
 	w->sleeping = 0;
