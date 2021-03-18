@@ -100,6 +100,7 @@ writefile_chunk(FILE *f, const char *name, struct log_chunk *c) {
 		ptr += sizeof(header);
 		sz -= sizeof(header);
 		fprintf(f, "[%06u:%s] %.*s\n", header.id, name, header.size, ptr);
+		fflush(f);
 		ptr += header.size;
 		sz -= header.size;
 	}
@@ -127,6 +128,7 @@ static void
 writefile_all_logger(FILE *f, struct debug_logger *logger) {
 	if (logger == NULL)
 		return;
+	dlog_flush(logger);
 	writefile_logger(f, logger);
 	writefile_all_logger(f, logger->link);
 }
@@ -135,7 +137,7 @@ void
 dlog_writefile(FILE *f) {
 	if (f == NULL)
 		f = stdout;
-	writefile_all_logger(stdout, G.logger);
+	writefile_all_logger(f, G.logger);
 }
 
 void

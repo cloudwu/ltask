@@ -53,7 +53,9 @@ struct ltask {
 	struct service_pool *services;
 	struct queue *schedule;
 	struct timer *timer;
+#ifdef DEBUGLOG
 	struct debug_logger *logger;
+#endif
 	struct logqueue *lqueue;
 	atomic_int schedule_owner;
 	atomic_int active_worker;
@@ -492,7 +494,9 @@ ltask_init(lua_State *L) {
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_GLOBAL");
 
 	task->lqueue = logqueue_new();
+#ifdef DEBUGLOG
 	task->logger = dlog_new("SCHEDULE", -1);
+#endif
 	task->config = config;
 	task->workers = (struct worker_thread *)lua_newuserdatauv(L, config->worker * sizeof(struct worker_thread), 0);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_WORKERS");
@@ -500,12 +504,16 @@ ltask_init(lua_State *L) {
 	task->schedule = queue_new_int(config->max_service);
 	task->timer = NULL;
 
+#ifdef DEBUGLOG
 	if (lua_getfield(L, 1, "debuglog") == LUA_TSTRING) {
 		task->logfile = fopen(lua_tostring(L, -1), "w");
 	} else {
 		task->logfile = NULL;
 	}
 	lua_pop(L, 1);
+#else
+	task->logfile = NULL;
+#endif
 
 	int i;
 	for (i=0;i<config->worker;i++) {
@@ -565,7 +573,9 @@ ltask_exclusive(lua_State *L) {
 	service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive);
 	service_status_set(task->services, e->service, SERVICE_STATUS_EXCLUSIVE);
 	e->task = task;
+#ifdef DEBUGLOG
 	e->logger = dlog_new("EXCLUSIVE", ecount);
+#endif
 	debug_printf(e->logger, "New service %x\n", e->service.id);
 	e->thread_id = ecount;
 	e->sending = queue_new_ptr(task->config->queue_sending);

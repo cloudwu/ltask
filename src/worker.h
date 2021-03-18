@@ -10,7 +10,9 @@ struct ltask;
 
 struct worker_thread {
 	struct ltask *task;
+#ifdef DEBUGLOG
 	struct debug_logger *logger;
+#endif
 	int worker_id;
 	service_id running;
 	atomic_int service_ready;
@@ -23,7 +25,9 @@ struct worker_thread {
 static inline void
 worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->task = task;
+#ifdef DEBUGLOG
 	worker->logger = dlog_new("WORKER", worker_id);
+#endif
 	worker->worker_id = worker_id;
 	atomic_int_init(&worker->service_ready, 0);
 	atomic_int_init(&worker->service_done, 0);
