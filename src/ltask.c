@@ -353,8 +353,8 @@ thread_worker(void *ud) {
 	int thread_id = THREAD_WORKER(w->worker_id);
 	for (;;) {
 		if (w->term_signal) {
-			atomic_int_dec(&w->task->thread_count);
-			return;
+			// quit
+			break;
 		}
 		service_id id = worker_get_job(w);
 		if (id.id) {
@@ -367,7 +367,9 @@ thread_worker(void *ud) {
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
 						debug_printf(w->logger, "Root quit");
-						// root quit
+						// root quit, wakeup others
+						quit_all_workers(w->task);
+						wakeup_all_workers(w->task);
 						break;
 					} else {
 						service_send_signal(P, id);
@@ -427,10 +429,8 @@ thread_worker(void *ud) {
 		}
 	}
 	worker_quit(w);
-	debug_printf(w->logger, "Quit");
-	quit_all_workers(w->task);
-	wakeup_all_workers(w->task);
 	atomic_int_dec(&w->task->thread_count);
+	debug_printf(w->logger, "Quit");
 }
 
 static void
