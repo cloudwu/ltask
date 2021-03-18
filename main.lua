@@ -42,6 +42,10 @@ local function exclusive_thread(name, id)
 	boot.new_thread(sid)
 end
 
+function print(...)
+	boot.pushlog(ltask.pack(...))
+end
+
 init_config()
 boot.init(config)
 boot.init_timer()

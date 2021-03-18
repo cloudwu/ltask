@@ -769,6 +769,24 @@ ltask_init_root(lua_State *L) {
 	return 0;
 }
 
+static int
+ltask_boot_pushlog(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
+	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
+	service_id system_id = { SERVICE_ID_SYSTEM };
+	struct logmessage msg;
+	msg.msg = lua_touserdata(L, 1);
+	msg.sz = (uint32_t)luaL_checkinteger(L, 2);
+	msg.id = system_id;
+	msg.timestamp = timer_now(task->timer);
+	struct logqueue *q = task->lqueue;
+	if (logqueue_push(q, &msg)) {
+		return luaL_error(L, "log error");
+	}
+	return 0;
+}
+
+
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
 	static atomic_int init = ATOMIC_VAR_INIT(0);
@@ -785,6 +803,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "new_service", ltask_newservice },
 		{ "init_timer", ltask_init_timer },
 		{ "init_root", ltask_init_root },
+		{ "pushlog", ltask_boot_pushlog },
 		{ NULL, NULL },
 	};
 	
