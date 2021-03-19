@@ -13,10 +13,28 @@ local S = {}
 local mapped = {}
 
 do
+	local function writelog()
+		while true do
+			local ti, id, msg, sz = ltask.poplog()
+			if ti == nil then
+				break
+			end
+			local tsec = ti // 100
+			local msec = ti % 100
+			local t = table.pack(ltask.unpack_remove(msg, sz))
+			local str = {}
+			for i = 1, t.n do
+				str[#str+1] = tostring(t[i])
+			end
+			io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+		end
+	end
+
 	-- root init response to itself
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
-			print("Root init error:", ltask.unpack(msg, sz))
+			ltask.log("Root init error:", ltask.unpack(msg, sz))
+			writelog()
 		end
 	end
 
@@ -78,18 +96,35 @@ ltask.signal_handler(function(from)
 	root.close_service(from)
 	ltask.post_message(0,from, MESSAGE_SCHEDULE_DEL)
 
-	if SERVICE_N == 0 then
-		-- Only root alive
+		local request = ltask.request()
 		for id = 2, 1 + #config.exclusive do
-			ltask.send(id, "QUIT")
+			request:add { id, proto = "system", "quit" }
+		end
+		for req, resp in request:select() do
+			if not resp then
+				print(string.format("exclusive %d quit error: %s.", req[1], req.error))
+			end
 		end
 		ltask.quit()
 	end
 end)
 
 local function boot()
+	local request = ltask.request()
 	for i, name in ipairs(config.exclusive) do
-		mapped[name] = i + 1
+		local id = i + 1
+		MAPPED[name] = id
+		request:add { id, proto = "system", "init", {
+			path = config.lua_path,
+			cpath = config.lua_cpath,
+			filename = searchpath(name),
+			args = {},
+		}}
+	end
+	for req, resp in request:select() do
+		if not resp then
+			print(string.format("exclusive %d init error: %s.", req[1], req.error))
+		end
 	end
 	S.spawn(table.unpack(config.bootstrap))
 end
