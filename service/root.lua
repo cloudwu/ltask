@@ -14,7 +14,7 @@ local mapped = {}
 
 do
 	-- root init response to itself
-	local function init_receipt(type, msg , sz)
+	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
 			print("Root init error:", ltask.unpack(msg, sz))
 		end
