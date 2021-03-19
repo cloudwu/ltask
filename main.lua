@@ -36,8 +36,8 @@ local function bootstrap()
 	}
 end
 
-local function exclusive_thread(name, id)
-	local sid = boot.new_service("@" .. searchpath(name), id)
+local function exclusive_thread(id)
+	local sid = boot.new_service("@" .. searchpath "exclusive", id)
 	assert(sid == id)
 	boot.new_thread(sid)
 end
@@ -50,8 +50,8 @@ init_config()
 boot.init(config)
 boot.init_timer()
 
-for i, name in ipairs(config.exclusive) do
-	exclusive_thread(name, i+ 1)
+for id = 2, 1 + #config.exclusive do
+	exclusive_thread(id)
 end
 
 bootstrap()	-- launch root

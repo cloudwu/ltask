@@ -10,11 +10,17 @@ local RECEIPT_DONE <const> = 1
 local RECEIPT_ERROR <const> = 2
 local RECEIPT_BLOCK <const> = 3
 
+local SELECT_PROTO = {
+	system = MESSAGE_SYSTEM,
+	request = MESSAGE_REQUEST,
+}
+
+local ltask = require "ltask"
+
+
 local function dprint(...)
 --	print("DEBUG", ...)
 end
-
-local ltask = require "ltask"
 
 ----- send message ------
 local post_message_ ; do
@@ -207,11 +213,12 @@ do ------ request/select
 			local req = self[i]
 			-- send request
 			local address = req[1]
+			local proto = req.proto and assert(SELECT_PROTO[req.proto]) or MESSAGE_REQUEST
 			local session = session_id
 			session_coroutine_suspend_lookup[session] = running_thread
 			session_id = session_id + 1
 
-			if not post_message(address, session, MESSAGE_REQUEST, ltask.pack(table.unpack(req, 2))) then
+			if not post_message(address, session, proto, ltask.pack(table.unpack(req, 2))) then
 				err = err or {}
 				req.error = true	-- address is dead
 				err[#err+1] = req
@@ -341,8 +348,8 @@ local function system(command, t)
 			package.cpath = t.cpath
 		end
 		local _require = _G.require
-		_G.require = require "ltask.require"
 		local f = assert(loadfile(t.filename))
+		_G.require = require "ltask.require"
 		local r = f(table.unpack(t.args))
 		_G.require = _require
 		if service == nil then
@@ -367,6 +374,8 @@ end
 SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 	send_response(request(ltask.unpack_remove(msg, sz)))
 end
+
+print = ltask.log
 
 while true do
 	local from, session, type, msg, sz = ltask.recv_message()

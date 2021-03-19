@@ -3,12 +3,6 @@ local manager = require "ltask.manager"
 
 local arg = ...
 
-local logger = manager.spawn("logger")
-
-local function print(...)
-	ltask.log(...)
-end
-
 print "Bootstrap Begin"
 print(os.date("%c", (ltask.now())))
 
@@ -36,5 +30,3 @@ ltask.send(addr, "exit")
 print(ltask.send(addr, "ping", "SEND"))
 
 print "Bootstrap End"
-
-ltask.send(logger, "exit")
