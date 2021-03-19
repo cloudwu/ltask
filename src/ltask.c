@@ -645,6 +645,8 @@ ltask_run(lua_State *L) {
 		atomic_int_store(&task->thread_count, threads_count-1);
 		t[threads_count-1].func = thread_logger;
 		t[threads_count-1].ud = (void *)task;
+	} else {
+		atomic_int_store(&task->thread_count, threads_count);
 	}
 	thread_join(t, threads_count);
 	if (!logthread) {
