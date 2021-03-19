@@ -10,7 +10,10 @@ local MESSAGE_SCHEDULE_DEL <const> = 1
 local MESSAGE_SCHEDULE_HANG <const> = 2
 
 local S = {}
-local mapped = {}
+local MAPPED = {}
+local SERVICES = {}
+local LOGGER_SERVICE
+
 
 do
 	local function writelog()
@@ -55,19 +58,15 @@ local function init_service(address, name, ...)
 	})
 end
 
--- todo: manage services
-
-local SERVICE_N = 0
-
 function S.spawn(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
+	SERVICES[address] = true
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
 		ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
+		SERVICES[address] = nil
 		error(err)
 	end
---	print("SERVICE NEW", address)
-	SERVICE_N = SERVICE_N + 1
 	return address
 end
 
@@ -80,21 +79,37 @@ end
 
 function S.register(name)
 	local session = ltask.current_session()
-	if mapped[name] then
+	if MAPPED[name] then
 		error(("Name `%s` already exists."):format(name))
 	end
-	mapped[name] = session.from
+	MAPPED[name] = session.from
 end
 
 function S.query(name)
-	return mapped[name]
+	return MAPPED[name]
 end
 
-ltask.signal_handler(function(from)
---	print("SERVICE DELETE", from)
-	SERVICE_N = SERVICE_N - 1
+local function del_service(from)
+	if from == LOGGER_SERVICE then
+		LOGGER_SERVICE = nil
+	else
+		assert(SERVICES[from] ~= nil)
+		SERVICES[from] = nil
+	end
 	root.close_service(from)
 	ltask.post_message(0,from, MESSAGE_SCHEDULE_DEL)
+end
+
+local function quit_signal_handler(from)
+	assert(from == LOGGER_SERVICE)
+	del_service(from)
+	ltask.quit()
+end
+
+local function signal_handler(from)
+	del_service(from)
+	if next(SERVICES) == nil then
+		ltask.signal_handler(quit_signal_handler)
 
 		local request = ltask.request()
 		for id = 2, 1 + #config.exclusive do
@@ -105,9 +120,16 @@ ltask.signal_handler(function(from)
 				print(string.format("exclusive %d quit error: %s.", req[1], req.error))
 			end
 		end
-		ltask.quit()
+
+		if LOGGER_SERVICE then
+			ltask.call(LOGGER_SERVICE, "quit")
+		else
+			ltask.quit()
+		end
 	end
-end)
+end
+
+ltask.signal_handler(signal_handler)
 
 local function boot()
 	local request = ltask.request()
@@ -126,6 +148,8 @@ local function boot()
 			print(string.format("exclusive %d init error: %s.", req[1], req.error))
 		end
 	end
+	LOGGER_SERVICE = S.spawn(table.unpack(config.logger))
+	SERVICES[LOGGER_SERVICE] = nil
 	S.spawn(table.unpack(config.bootstrap))
 end
 
