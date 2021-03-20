@@ -966,7 +966,7 @@ lexclusive_send_message(lua_State *L) {
 	int ethread = service_thread_id(S->task->services, S->id);
 	struct queue *q = get_exclusive_thread_sending(S->task, ethread);
 	if (q == NULL)
-		return luaL_error(L, "%x is not in exclusive thread", S->id);
+		return luaL_error(L, "%d is not in exclusive thread", S->id.id);
 	struct message *msg = gen_send_message(L, S->id);
 	if (queue_push_ptr(q, msg)) {
 		// sending queue is full
