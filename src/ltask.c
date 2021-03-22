@@ -156,29 +156,69 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 	}
 }
 
+// See https://github.com/cloudwu/ltask/issues/21
+#define SENDING_BLOCKED 128
+
+struct sending_blocked {
+	int n;
+	service_id id[SENDING_BLOCKED];
+};
+
+static inline int
+sending_blocked_check(struct sending_blocked *S, service_id id) {
+	if (S->n == 0)
+		return 0;	// no blocked service
+	if (S->n > SENDING_BLOCKED)
+		return 1;	// all blocked
+	int i;
+	for (i=0;i<S->n;i++) {
+		if (id.id == S->id[i].id) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static inline void
+sending_blocked_mark(struct sending_blocked *S, service_id id) {
+	int index = S->n++;
+	if (index == SENDING_BLOCKED)
+		return;	// full, block all subsequent messages.
+	S->id[index] = id;
+}
+
 static void
 dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 	struct ltask *task = e->task;
 	struct service_pool *P = task->services;
 	int len = queue_length(sending);
 	int i;
+	struct sending_blocked S;
+	S.n = 0;
 	for (i=0;i<len;i++) {
 		struct message *msg = (struct message *)queue_pop_ptr(sending);
-		switch (service_push_message(P, msg->to, msg)) {
-		case 0 :	// succ
-			break;
-		case 1 :	// block, push back
+		if (!sending_blocked_check(&S, msg->to)) {
+			// msg->to is not blocked before
+			switch (service_push_message(P, msg->to, msg)) {
+			case 0 :	// succ
+				if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
+					debug_printf(e->logger, "Service %x is in schedule", msg->to.id);
+					service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
+					schedule_back(task, msg->to);
+				}
+				break;
+			case 1 :	// block, push back
+				queue_push_ptr(sending, msg);
+				// The messages to msg->to is blocked, mark it.
+				sending_blocked_mark(&S, msg->to);
+				break;
+			default :	// dead, delete message
+				// todo : report somewhere or release object in message
+				message_delete(msg);
+				break;
+			}
+		} else {
 			queue_push_ptr(sending, msg);
-			break;
-		default :	// dead, delete message
-			// todo : report somewhere or release object in message
-			message_delete(msg);
-			break;
-		}
-		if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-			debug_printf(e->logger, "Service %x is in schedule", msg->to.id);
-			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
-			schedule_back(task, msg->to);
 		}
 	}
 }
