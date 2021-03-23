@@ -20,8 +20,10 @@ local function writelog()
 end
 
 local function loop()
-	writelog()
-	ltask.sleep(100)
+	while true do
+		writelog()
+		ltask.sleep(100)
+	end
 end
 
 ltask.timeout(0, loop)

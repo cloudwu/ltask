@@ -38,6 +38,7 @@ do
 		if type == MESSAGE_ERROR then
 			ltask.log("Root init error:", ltask.unpack(msg, sz))
 			writelog()
+			-- todo : quit
 		end
 	end
 
@@ -56,6 +57,10 @@ local function init_service(address, name, ...)
 		filename = searchpath(name),
 		args = {...},
 	})
+end
+
+function S.report_error(addr, session)
+	ltask.error(addr, session)
 end
 
 function S.spawn(name, ...)
@@ -96,8 +101,15 @@ local function del_service(from)
 		assert(SERVICES[from] ~= nil)
 		SERVICES[from] = nil
 	end
-	root.close_service(from)
+	local msg = root.close_service(from)
 	ltask.post_message(0,from, MESSAGE_SCHEDULE_DEL)
+	if msg then
+		for i=1, #msg, 2 do
+			local addr = msg[i]
+			local session = msg[i+1]
+			ltask.error(addr,session)
+		end
+	end
 end
 
 local function quit_signal_handler(from)

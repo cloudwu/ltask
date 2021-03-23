@@ -15,11 +15,11 @@ function S.update()
 	local blocked = exclusive.timer_update()
 	coroutine.yield()
 	if blocked then
-		ltask.sleep(1)	-- sleep 1/1000s
+		exclusive.sleep(1)	-- sleep 1/1000s
 		coroutine.yield()
 		send_blocked_message(blocked)
 	else
-		ltask.sleep(1)
+		exclusive.sleep(1)
 	end
 end
 

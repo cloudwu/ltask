@@ -41,9 +41,10 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 struct exclusive_thread {
 	struct debug_logger * logger;
 	struct ltask *task;
-	int thread_id;
-	service_id service;
 	struct queue *sending;
+	int thread_id;
+	int term_signal;
+	service_id service;
 };
 
 struct ltask {
@@ -387,6 +388,14 @@ quit_all_workers(struct ltask *task) {
 }
 
 static void
+quit_all_exclusives(struct ltask *task) {
+	int i;
+	for (i=0;i<MAX_EXCLUSIVE;i++) {
+		task->exclusives[i].term_signal = 1;
+	}
+}
+
+static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
@@ -411,6 +420,7 @@ thread_worker(void *ud) {
 						debug_printf(w->logger, "Root quit");
 						// root quit, wakeup others
 						quit_all_workers(w->task);
+						quit_all_exclusives(w->task);
 						wakeup_all_workers(w->task);
 						break;
 					} else {
@@ -484,10 +494,10 @@ thread_exclusive(void *ud) {
 	int isdead = 0;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
 	struct queue * sending = e->sending;
-	while (!isdead) {
-		isdead = service_resume(P, id, thread_id);
-		if (isdead) {
-			service_close(P, id);
+	while (!e->term_signal) {
+		if (service_resume(P, id, thread_id)) {
+			// Resume error : quit
+			break;
 		}
 		int queue_len = queue_length(sending);
 		struct message *message_out = service_message_out(P, id);
@@ -508,14 +518,10 @@ thread_exclusive(void *ud) {
 					wakeup -= worker_wakeup(&e->task->workers[i]);
 				}
 			}
-			if (isdead) {
-				service_delete(P, id);
-			}
 			release_scheduler_exclusive(e);
 		}
 	}
 	debug_printf(e->logger, "Quit");
-	wakeup_all_workers(e->task);
 	atomic_int_dec(&e->task->thread_count);
 }
 
@@ -618,6 +624,7 @@ ltask_exclusive(lua_State *L) {
 #endif
 	debug_printf(e->logger, "New service %x\n", e->service.id);
 	e->thread_id = ecount;
+	e->term_signal = 0;
 	e->sending = queue_new_ptr(task->config->queue_sending);
 	if (ecount+1 < MAX_EXCLUSIVE) {
 		e[1].task = NULL;
@@ -1084,8 +1091,8 @@ luaseri_remove(lua_State *L) {
 }
 
 static int
-lsleep(lua_State *L) {
-	lua_Integer csec = luaL_checkinteger(L, 1);
+lexclusive_sleep(lua_State *L) {
+	lua_Integer csec = luaL_optinteger(L, 1, 0);
 	sys_sleep(csec);
 	return 0;
 }
@@ -1175,7 +1182,6 @@ luaopen_ltask(lua_State *L) {
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
 		{ "message_receipt", lmessage_receipt },
-		{ "sleep", lsleep },
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
@@ -1195,6 +1201,7 @@ luaopen_ltask_exclusive(lua_State *L) {
 	luaL_Reg l[] = {
 		{ "send", lexclusive_send_message },
 		{ "timer_update", lexclusive_timer_update },
+		{ "sleep", lexclusive_sleep },
 		{ NULL, NULL },
 	};
 
@@ -1214,17 +1221,31 @@ ltask_initservice(lua_State *L) {
 	return 0;
 }
 
-static void
-close_service_messages(struct service_pool *P, service_id id) {
+static int
+close_service_messages(lua_State *L, struct service_pool *P, service_id id) {
+	int report_error = 0;
+	int index;
 	for (;;) {
 		struct message * m = service_pop_message(P, id);
 		if (m) {
 			// todo : response message (error)
+			if (m->type == MESSAGE_REQUEST || m->type == MESSAGE_SYSTEM) {
+				if (!report_error) {
+					lua_newtable(L);
+					report_error = 1;
+					index = 1;
+				}
+				lua_pushinteger(L, m->from.id);
+				lua_rawseti(L, -2, index++);
+				lua_pushinteger(L, m->session);
+				lua_rawseti(L, -2, index++);
+			}
 			message_delete(m);
 		} else {
 			break;
 		}
 	}
+	return report_error;
 }
 
 static int
@@ -1235,9 +1256,9 @@ ltask_closeservice(lua_State *L) {
        if (service_status_get(S->task->services, id) != SERVICE_STATUS_DEAD) {
                return luaL_error(L, "Hang %d before close it", sid);
        }
-	   close_service_messages(S->task->services, id);
+	   int ret = close_service_messages(L, S->task->services, id);
 	   service_delete(S->task->services, id);
-       return 0;
+       return ret;
 }
 
 LUAMOD_API int

@@ -22,11 +22,17 @@ local function dprint(...)
 --	print("DEBUG", ...)
 end
 
+local yield_service = coroutine.yield
+local yield_session = coroutine.yield
+local function continue_session()
+	coroutine.yield(true)
+end
+
 ----- send message ------
 local post_message_ ; do
 	function post_message_(to, session, type, msg, sz)
 		ltask.send_message(to, session, type, msg, sz)
-		coroutine.yield(true) -- tell schedule continue
+		continue_session()
 		local type, msg, sz = ltask.message_receipt()
 		if type == RECEIPT_DONE then
 			return true
@@ -60,7 +66,60 @@ local session_coroutine_response = {}
 local session_coroutine_address = {}
 local session_id = 1
 
-local yield_service = coroutine.yield
+function ltask.error(addr, session)
+	ltask.send_message(addr, session, MESSAGE_ERROR)
+	continue_session()
+	local type, msg, sz = ltask.message_receipt()
+	if type ~= RECEIPT_DONE then
+		if type == RECEIPT_BLOCK then
+			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, ltask.pack("report_error", addr, session))
+			while true do
+				continue_session()
+				local type, msg, sz = ltask.message_receipt()
+				if type == RECEIPT_DONE then
+					break
+				elseif type == RECEIPT_BLOCK then
+					-- retry "report_error"
+					ltask.sleep(1)
+					ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, msg, sz)
+					type, msg, sz = ltask.message_receipt()
+				else
+					-- error (root quit?)
+					ltask.remove(msg, sz)
+					break
+				end
+			end
+		end
+	end
+end
+
+-- The same as ltask.error , but run in main thread
+local function report_error(addr, session, msg)
+	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(msg))
+	yield_service()
+	local type, msg, sz = ltask.message_receipt()
+	if type ~= RECEIPT_DONE then
+		ltask.remove(msg, sz)
+		if type == RECEIPT_BLOCK then
+			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, ltask.pack("report_error", addr, session))
+			while true do
+				yield_service()
+				local type, msg, sz = ltask.message_receipt()
+				if type == RECEIPT_DONE then
+					break
+				elseif type == RECEIPT_BLOCK then
+					-- retry "report_error"
+					ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, msg, sz)
+					type, msg, sz = ltask.message_receipt()
+				else
+					-- error (root quit?)
+					ltask.remove(msg, sz)
+					break
+				end
+			end
+		end
+	end
+end
 
 local function resume_session(co, ...)
 	running_thread = co
@@ -71,21 +130,16 @@ local function resume_session(co, ...)
 		local from = session_coroutine_address[co]
 		local session = session_coroutine_response[co]
 
-		if from == 0 then
+		-- term session
+		session_coroutine_address[co] = nil
+		session_coroutine_response[co] = nil
+
+		if from == nil or from == 0 then
 			-- system message
 			print(debug.traceback(co, msg))
 		else
 			print(debug.traceback(co, msg))
-			ltask.send_message(from, session, MESSAGE_ERROR, ltask.pack(msg))
-			yield_service()
-			local type, msg, sz = ltask.message_receipt()
-			if type == RECEIPT_ERROR then
-				ltask.remove(msg, sz)
-			elseif type == RECEIPT_BLOCK then
-				-- todo: report again
-				ltask.remove(msg, sz)
-				print(from, "is busy")
-			end
+			report_error(from, session, msg)
 		end
 	end
 end
@@ -105,7 +159,11 @@ local SESSION = {}
 local function send_response(...)
 	local from = session_coroutine_address[running_thread]
 	local session = session_coroutine_response[running_thread]
-	if session then
+	-- End session
+	session_coroutine_address[running_thread] = nil
+	session_coroutine_response[running_thread] = nil
+
+	if session and session > 0 then
 		if not post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
 			print(string.format("Response to absent %x", from))
 		end
@@ -124,7 +182,7 @@ function ltask.call(address, ...)
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
-	local type, session, msg, sz = coroutine.yield()
+	local type, session, msg, sz = yield_session()
 	if type == MESSAGE_RESPONSE then
 		return ltask.unpack_remove(msg, sz)
 	else
@@ -136,7 +194,7 @@ end
 local ignore_response ; do
 	local function no_response_()
 		while true do
-			local type, session, msg, sz = coroutine.yield()
+			local type, session, msg, sz = yield_session()
 			ltask.remove(msg, sz)
 		end
 	end
@@ -164,7 +222,7 @@ function ltask.syscall(address, ...)
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
-	local type, session,  msg, sz = coroutine.yield()
+	local type, session,  msg, sz = yield_session()
 	if type == MESSAGE_RESPONSE then
 		return ltask.unpack_remove(msg, sz)
 	else
@@ -177,7 +235,7 @@ function ltask.sleep(ti)
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	ltask.timer_add(session_id, ti)
 	session_id = session_id + 1
-	coroutine.yield()
+	yield_session()
 end
 
 function ltask.timeout(ti, func)
@@ -261,7 +319,7 @@ do ------ request/select
 				return
 			end
 
-			local type, session, msg, sz = coroutine.yield()
+			local type, session, msg, sz = yield_session()
 			if session == timeout_session then
 				-- timeout, finish
 				self._timeout = nil
@@ -320,6 +378,10 @@ end
 local quit
 
 function ltask.quit()
+	for co, addr in pairs(session_coroutine_address) do
+		local session = session_coroutine_response[co]
+		ltask.error(addr, session)
+	end
 	quit = true
 end
 

@@ -38,9 +38,12 @@ free_items(struct log_item *item) {
 
 void
 logqueue_delete(struct logqueue *q) {
+	struct logmessage m;
+	while (!logqueue_pop(q, &m)) {
+		free(m.msg);
+	}
 	spinlock_destroy(&q->lock);
 	free_items(q->freelist);
-	free_items(q->head);
 	free(q);
 }
 
@@ -54,9 +57,6 @@ alloc_item(struct logqueue *q) {
 	}
 	return ret;
 }
-
-
-#include <stdio.h>
 
 int
 logqueue_push(struct logqueue *q, struct logmessage *m) {

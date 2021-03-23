@@ -64,7 +64,7 @@ end
 
 function service.update()
 	coroutine.yield()
-	ltask.sleep(1)
+	exclusive.sleep(1)
 end
 
 function service.quit()
