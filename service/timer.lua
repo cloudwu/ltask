@@ -26,6 +26,7 @@ end
 print "Timer start"
 function S.quit()
 	print "Timer quit"
+	--ltask.quit()
 end
 
 return S

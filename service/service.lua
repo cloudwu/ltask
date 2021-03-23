@@ -378,11 +378,13 @@ end
 local quit
 
 function ltask.quit()
-	for co, addr in pairs(session_coroutine_address) do
-		local session = session_coroutine_response[co]
-		ltask.error(addr, session)
-	end
-	quit = true
+	ltask.timeout(0, function ()
+		for co, addr in pairs(session_coroutine_address) do
+			local session = session_coroutine_response[co]
+			ltask.error(addr, session)
+		end
+		quit = true
+	end)
 end
 
 local service
