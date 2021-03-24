@@ -69,57 +69,41 @@ local session_id = 1
 local session_waiting = {}
 local wakeup_queue = {}
 
-function ltask.error(addr, session)
-	ltask.send_message(addr, session, MESSAGE_ERROR)
+local function report_error(addr, session, errobj)
+	ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, ltask.pack("report_error", addr, session, errobj))
 	continue_session()
-	local type, msg, sz = ltask.message_receipt()
-	if type ~= RECEIPT_DONE then
-		if type == RECEIPT_BLOCK then
-			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, ltask.pack("report_error", addr, session))
-			while true do
-				continue_session()
-				local type, msg, sz = ltask.message_receipt()
-				if type == RECEIPT_DONE then
-					break
-				elseif type == RECEIPT_BLOCK then
-					-- retry "report_error"
-					ltask.sleep(1)
-					ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, msg, sz)
-					type, msg, sz = ltask.message_receipt()
-				else
-					-- error (root quit?)
-					ltask.remove(msg, sz)
-					break
-				end
-			end
+	while true do
+		local type, msg, sz = ltask.message_receipt()
+		if type == RECEIPT_DONE then
+			break
+		elseif type == RECEIPT_BLOCK then
+			-- retry "report_error"
+			ltask.sleep(1)
+			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, msg, sz)
+			continue_session()
+		else
+			-- error (root quit?)
+			ltask.remove(msg, sz)
+			break
 		end
 	end
 end
 
--- The same as ltask.error , but run in main thread
-local function report_error(addr, session, msg)
-	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(msg))
-	yield_service()
+function ltask.error(addr, session, errobj)
+	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
+	if running_thread == nil then
+		-- main thread
+		yield_service()
+	else
+		continue_session()
+	end
 	local type, msg, sz = ltask.message_receipt()
 	if type ~= RECEIPT_DONE then
 		ltask.remove(msg, sz)
 		if type == RECEIPT_BLOCK then
-			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, ltask.pack("report_error", addr, session))
-			while true do
-				yield_service()
-				local type, msg, sz = ltask.message_receipt()
-				if type == RECEIPT_DONE then
-					break
-				elseif type == RECEIPT_BLOCK then
-					-- retry "report_error"
-					ltask.send_message(SERVICE_ROOT, 0, MESSAGE_ERROR, msg, sz)
-					type, msg, sz = ltask.message_receipt()
-				else
-					-- error (root quit?)
-					ltask.remove(msg, sz)
-					break
-				end
-			end
+			ltask.timeout(0, function ()
+				report_error(addr, session, errobj)
+			end)
 		end
 	end
 end
@@ -127,6 +111,7 @@ end
 local function resume_session(co, ...)
 	running_thread = co
 	local ok, msg = coroutine.resume(co, ...)
+	running_thread = nil
 	if ok then
 		return msg
 	else
@@ -142,7 +127,7 @@ local function resume_session(co, ...)
 			print(debug.traceback(co, msg))
 		else
 			print(debug.traceback(co, msg))
-			report_error(from, session, msg)
+			ltask.error(from, session, msg)
 		end
 	end
 end
@@ -430,7 +415,7 @@ function ltask.quit()
 	ltask.timeout(0, function ()
 		for co, addr in pairs(session_coroutine_address) do
 			local session = session_coroutine_response[co]
-			ltask.error(addr, session)
+			ltask.error(addr, session, "Service has been quit.")
 		end
 		quit = true
 	end)
