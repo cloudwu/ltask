@@ -66,6 +66,9 @@ local session_coroutine_response = {}
 local session_coroutine_address = {}
 local session_id = 1
 
+local session_waiting = {}
+local wakeup_queue = {}
+
 function ltask.error(addr, session)
 	ltask.send_message(addr, session, MESSAGE_ERROR)
 	continue_session()
@@ -144,14 +147,22 @@ local function resume_session(co, ...)
 	end
 end
 
+local function wakeup_session(co, ...)
+	local cont = resume_session(co, ...)
+	while cont do
+		yield_service()
+		cont = resume_session(co)
+	end
+end
+
 -- todo: cache thread
 local new_thread = coroutine.create
 
-local function new_session(f, type, from, session, msg, sz)
+local function new_session(f, from, session)
 	local co = new_thread(f)
 	session_coroutine_address[co] = from
 	session_coroutine_response[co] = session
-	return resume_session(co, type, msg, sz)
+	return co
 end
 
 local SESSION = {}
@@ -243,6 +254,44 @@ function ltask.timeout(ti, func)
 	session_coroutine_suspend_lookup[session_id] = co
 	ltask.timer_add(session_id, ti)
 	session_id = session_id + 1
+end
+
+local function wait_interrupt(errobj)
+	error(errobj)
+end
+
+local function wait_response(type, ...)
+	if type == MESSAGE_RESPONSE then
+		return ...
+	else -- type == MESSAGE_ERROR
+		wait_interrupt(...)
+	end
+end
+
+function ltask.wait(token)
+	token = token or running_thread
+	session_waiting[token] = running_thread
+	session_coroutine_suspend_lookup[session_id] = running_thread
+	session_id = session_id + 1
+	return wait_response(yield_session())
+end
+
+function ltask.wakeup(token, ...)
+	local co = session_waiting[token]
+	if co then
+		wakeup_queue[#wakeup_queue+1] = {co, MESSAGE_RESPONSE, ...}
+		session_waiting[token] = nil
+		return true
+	end
+end
+
+function ltask.interrupt(token, errobj)
+	local co = session_waiting[token]
+	if co then
+		wakeup_queue[#wakeup_queue+1] = {co, MESSAGE_ERROR, errobj}
+		session_waiting[token] = nil
+		return true
+	end
 end
 
 ltask.post_message = post_message
@@ -444,11 +493,10 @@ print = ltask.log
 while true do
 	local from, session, type, msg, sz = ltask.recv_message()
 	local f = SESSION[type]
-	local cont
 	if f then
 		-- new session for this message
-		cont = new_session(f, type, from, session, msg, sz)
-	else
+		local co = new_session(f, from, session)
+		wakeup_session(co, type, msg, sz)
 		local co = session_coroutine_suspend_lookup[session]
 		if co == nil then
 			print("Unknown response session : ", session)
@@ -456,13 +504,14 @@ while true do
 			break
 		else
 			session_coroutine_suspend_lookup[session] = nil
-			cont = resume_session(co, type, session, msg, sz)
+			wakeup_session(co, type, session, msg, sz)
 		end
 	end
 
-	while cont do
+	while #wakeup_queue > 0 do
+		local s = table.remove(wakeup_queue, 1)
 		yield_service()
-		cont = resume_session(running_thread)
+		wakeup_session(table.unpack(s))
 	end
 
 	if quit then
