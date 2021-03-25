@@ -50,7 +50,7 @@ local post_message_ ; do
 	end
 end
 
-local function post_message(to, ...)
+function ltask.post_message(to, ...)
 	local r = post_message_(to, ...)
 	if r == nil then
 		error(string.format("%x is busy", to))
@@ -160,7 +160,7 @@ local function send_response(...)
 	session_coroutine_response[running_thread] = nil
 
 	if session and session > 0 then
-		if not post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
+		if not ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
 			print(string.format("Response to absent %x", from))
 		end
 	end
@@ -173,7 +173,7 @@ function ltask.suspend(session, co)
 end
 
 function ltask.call(address, ...)
-	if not post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
+	if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
 		error(string.format("%x is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
@@ -213,7 +213,7 @@ function ltask.send(address, ...)
 end
 
 function ltask.syscall(address, ...)
-	if not post_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...)) then
+	if not ltask.post_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...)) then
 		error(string.format("%x is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
@@ -279,8 +279,6 @@ function ltask.interrupt(token, errobj)
 	end
 end
 
-ltask.post_message = post_message
-
 function ltask.current_session()
 	local from = session_coroutine_address[running_thread]
 	local session = session_coroutine_response[running_thread]
@@ -310,7 +308,7 @@ do ------ request/select
 			session_coroutine_suspend_lookup[session] = running_thread
 			session_id = session_id + 1
 
-			if not post_message(address, session, proto, ltask.pack(table.unpack(req, 2))) then
+			if not ltask.post_message(address, session, proto, ltask.pack(table.unpack(req, 2))) then
 				err = err or {}
 				req.error = true	-- address is dead
 				err[#err+1] = req
@@ -448,6 +446,9 @@ local function system(command, t)
 		local _require = _G.require
 		local f = assert(loadfile(t.filename))
 		_G.require = require "ltask.require"
+		if t.exclusive then
+			require "ltask.init_exclusive"
+		end
 		local r = f(table.unpack(t.args))
 		_G.require = _require
 		if service == nil then
@@ -482,6 +483,7 @@ while true do
 		-- new session for this message
 		local co = new_session(f, from, session)
 		wakeup_session(co, type, msg, sz)
+	elseif session then
 		local co = session_coroutine_suspend_lookup[session]
 		if co == nil then
 			print("Unknown response session : ", session)
@@ -491,6 +493,8 @@ while true do
 			session_coroutine_suspend_lookup[session] = nil
 			wakeup_session(co, type, session, msg, sz)
 		end
+	elseif ltask.exclusive_idle then
+		ltask.exclusive_idle()
 	end
 
 	while #wakeup_queue > 0 do

@@ -59,8 +59,8 @@ local function init_service(address, name, ...)
 	})
 end
 
-function S.report_error(addr, session)
-	ltask.error(addr, session)
+function S.report_error(addr, session, errobj)
+	ltask.error(addr, session, errobj)
 end
 
 function S.spawn(name, ...)
@@ -125,7 +125,7 @@ local function signal_handler(from)
 
 		local request = ltask.request()
 		for id = 2, 1 + #config.exclusive do
-			request:add { id, proto = "system", "quit" }
+			request:add { id, "quit" }
 		end
 		for req, resp in request:select() do
 			if not resp then
@@ -153,11 +153,12 @@ local function boot()
 			cpath = config.lua_cpath,
 			filename = searchpath(name),
 			args = {},
+			exclusive = true,
 		}}
 	end
 	for req, resp in request:select() do
 		if not resp then
-			print(string.format("exclusive %d init error: %s.", req[1], req.error))
+			error(string.format("exclusive %d init error: %s.", req[1], req.error))
 		end
 	end
 	LOGGER_SERVICE = S.spawn(table.unpack(config.logger))
