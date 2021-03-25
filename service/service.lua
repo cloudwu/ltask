@@ -455,7 +455,10 @@ local function system(command, t)
 			service = r
 		end
 	else
-		-- todo : other system command
+		assert(command == "quit")
+		if service.quit then
+			return service.quit()
+		end
 	end
 end
 
