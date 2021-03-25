@@ -10,29 +10,29 @@ local MESSAGE_SCHEDULE_DEL <const> = 1
 local MESSAGE_SCHEDULE_HANG <const> = 2
 
 local S = {}
-local MAPPED = {}
-local SERVICES = {}
-local LOGGER_SERVICE
 
+local ANONYMOUS_SERVICES = {}
+local NAMED_SERVICES = {}
+local NAMED_ORDER = 0
+
+local function writelog()
+	while true do
+		local ti, id, msg, sz = ltask.poplog()
+		if ti == nil then
+			break
+		end
+		local tsec = ti // 100
+		local msec = ti % 100
+		local t = table.pack(ltask.unpack_remove(msg, sz))
+		local str = {}
+		for i = 1, t.n do
+			str[#str+1] = tostring(t[i])
+		end
+		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+	end
+end
 
 do
-	local function writelog()
-		while true do
-			local ti, id, msg, sz = ltask.poplog()
-			if ti == nil then
-				break
-			end
-			local tsec = ti // 100
-			local msec = ti % 100
-			local t = table.pack(ltask.unpack_remove(msg, sz))
-			local str = {}
-			for i = 1, t.n do
-				str[#str+1] = tostring(t[i])
-			end
-			io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
-		end
-	end
-
 	-- root init response to itself
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
@@ -65,11 +65,11 @@ end
 
 function S.spawn(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
-	SERVICES[address] = true
+	ANONYMOUS_SERVICES[address] = true
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
 		ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
-		SERVICES[address] = nil
+		ANONYMOUS_SERVICES[address] = nil
 		error(err)
 	end
 	return address
@@ -82,62 +82,71 @@ function S.kill(address)
 	return false
 end
 
-function S.register(name)
-	local session = ltask.current_session()
-	if MAPPED[name] then
+local function register_services(address, name)
+	if NAMED_SERVICES[name] then
 		error(("Name `%s` already exists."):format(name))
 	end
-	MAPPED[name] = session.from
+	ANONYMOUS_SERVICES[address] = nil
+	NAMED_ORDER = NAMED_ORDER + 1
+	NAMED_SERVICES[name] = {
+		name = name,
+		address = address,
+		status = "running",
+		order = NAMED_ORDER,
+	}
+	NAMED_SERVICES[NAMED_ORDER] = name
+end
+
+function S.register(name)
+	local session = ltask.current_session()
+	register_services(session.from, name)
 end
 
 function S.query(name)
-	return MAPPED[name]
+	local s = NAMED_SERVICES[name]
+	if s then
+		return s.address
+	end
 end
 
-local function del_service(from)
-	if from == LOGGER_SERVICE then
-		LOGGER_SERVICE = nil
+local function del_service(address)
+	if ANONYMOUS_SERVICES[address] then
+		ANONYMOUS_SERVICES[address] = nil
 	else
-		assert(SERVICES[from] ~= nil)
-		SERVICES[from] = nil
+		for _, name in ipairs(NAMED_SERVICES) do
+			local s = NAMED_SERVICES[name]
+			if s.address == address then
+				s.status = "dead"
+				break
+			end
+		end
 	end
-	local msg = root.close_service(from)
-	ltask.post_message(0,from, MESSAGE_SCHEDULE_DEL)
+	local msg = root.close_service(address)
+	ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
 	if msg then
 		for i=1, #msg, 2 do
 			local addr = msg[i]
 			local session = msg[i+1]
-			ltask.error(addr,session)
+			ltask.error(addr, session, "Service has been quit.")
 		end
 	end
 end
 
-local function quit_signal_handler(from)
-	assert(from == LOGGER_SERVICE)
-	del_service(from)
-	ltask.quit()
-end
-
 local function signal_handler(from)
 	del_service(from)
-	if next(SERVICES) == nil then
-		ltask.signal_handler(quit_signal_handler)
+	if next(ANONYMOUS_SERVICES) == nil then
+		ltask.signal_handler(del_service)
 
-		local request = ltask.request()
-		for id = 2, 1 + #config.exclusive do
-			request:add { id, "quit" }
-		end
-		for req, resp in request:select() do
-			if not resp then
-				print(string.format("exclusive %d quit error: %s.", req[1], req.error))
+		for i = #NAMED_SERVICES, 1, -1 do
+			local name = NAMED_SERVICES[i]
+			local s = NAMED_SERVICES[name]
+			local ok, err = pcall(ltask.syscall, s.address, "quit")
+			if not ok then
+				print(string.format("named service %s(%d) quit error: %s.", s.name, s.address, err))
 			end
 		end
-
-		if LOGGER_SERVICE then
-			ltask.call(LOGGER_SERVICE, "quit")
-		else
-			ltask.quit()
-		end
+		writelog()
+		ltask.quit()
 	end
 end
 
@@ -147,7 +156,7 @@ local function boot()
 	local request = ltask.request()
 	for i, name in ipairs(config.exclusive) do
 		local id = i + 1
-		MAPPED[name] = id
+		register_services(id, name)
 		request:add { id, proto = "system", "init", {
 			path = config.lua_path,
 			cpath = config.lua_cpath,
@@ -161,8 +170,8 @@ local function boot()
 			error(string.format("exclusive %d init error: %s.", req[1], req.error))
 		end
 	end
-	LOGGER_SERVICE = S.spawn(table.unpack(config.logger))
-	SERVICES[LOGGER_SERVICE] = nil
+	local logger = S.spawn(table.unpack(config.logger))
+	register_services(logger, "logger")
 	S.spawn(table.unpack(config.bootstrap))
 end
 

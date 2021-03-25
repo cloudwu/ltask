@@ -30,7 +30,6 @@ ltask.timeout(0, loop)
 
 function S.quit()
 	writelog()
-	ltask.quit()
 end
 
 return S
