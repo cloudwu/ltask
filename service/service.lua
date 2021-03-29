@@ -502,7 +502,6 @@ while true do
 
 	while #wakeup_queue > 0 do
 		local s = table.remove(wakeup_queue, 1)
-		yield_service()
 		wakeup_session(table.unpack(s))
 	end
 
