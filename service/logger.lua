@@ -3,9 +3,13 @@ local ltask = require "ltask"
 local S = {}
 
 local function writelog()
+	local flush
 	while true do
 		local ti, id, msg, sz = ltask.poplog()
 		if ti == nil then
+			if flush then
+				io.flush()
+			end
 			break
 		end
 		local tsec = ti // 100
@@ -16,6 +20,7 @@ local function writelog()
 			str[#str+1] = tostring(t[i])
 		end
 		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+		flush = true
 	end
 end
 
