@@ -1,13 +1,13 @@
 CFLAGS=-g -Wall
 # CFLAGS+=-DDEBUGLOG
 
-LUAINC=-I/usr/local/include
+LUAINC?=-I/usr/local/include
 
 ifeq ($(OS),Windows_NT)
   LIBS=-lwinmm
   SHARED=--shared
   SO=dll
-  LUALIB=-L/usr/local/bin -llua54
+  LUALIB?=-L/usr/local/bin -llua54
 else
   SHARED=--shared -fPIC
   SO=so
