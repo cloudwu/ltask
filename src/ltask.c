@@ -663,7 +663,6 @@ thread_logger(void *ud) {
 		dlog_writefile(f);
 		sys_sleep(100);	// sleep 0.1s
 	}
-	close_logger(t);
 }
 
 static int
