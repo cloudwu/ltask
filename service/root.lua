@@ -68,7 +68,7 @@ function S.spawn(name, ...)
 	ANONYMOUS_SERVICES[address] = true
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
-		ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
+		S.kill(address)
 		ANONYMOUS_SERVICES[address] = nil
 		error(err)
 	end
