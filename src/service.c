@@ -119,7 +119,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 				return result;
 			}
 		}
-		p->id = id;
+		p->id = id + 1;
 	}
 	struct service *s = (struct service *)malloc(sizeof(*s));
 	if (s == NULL)
