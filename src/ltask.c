@@ -114,6 +114,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 			// In schedule
 			debug_printf(task->logger, "Hang up %x and it's already in schedule", sid.id);
 			service_status_set(P, sid, SERVICE_STATUS_DEAD);
+			service_send_signal(P, sid);
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else if (service_hang(P, sid)) {
 			debug_printf(task->logger, "Hang up %x and put it back to schedule", sid.id);
