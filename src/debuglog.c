@@ -84,7 +84,7 @@ dlog_write(struct debug_logger *logger, const char *fmt, ...) {
 	char *ptr = logger->c->buffer + offset;
 	memcpy(ptr, &header, sizeof(header));
 	ptr += sizeof(header);
-	memcpy(ptr, tmp, sz);
+	memcpy(ptr, tmp, header.size);
 	logger->c->size = sz + offset;
 }
 
@@ -120,7 +120,7 @@ writefile_logger(FILE *f, struct debug_logger *logger) {
 	struct log_chunk *c = logger->c;
 	if (c->last) {
 		writefile_all_chunk(f, logger->name, c->last);
-		logger->c->last = NULL;
+		c->last = NULL;
 	}
 }
 
