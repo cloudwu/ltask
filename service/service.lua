@@ -160,9 +160,7 @@ local function send_response(...)
 	session_coroutine_response[running_thread] = nil
 
 	if session and session > 0 then
-		if not ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...)) then
-			print(string.format("Response to absent %x", from))
-		end
+		ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
 	end
 end
 
