@@ -388,6 +388,7 @@ do ------ request/select
 
 			self._request = self._request - 1
 			local req = self._sessions[session]
+			self._resp[session] = nil
 			self._sessions[session] = nil
 			return req, resp
 		end
