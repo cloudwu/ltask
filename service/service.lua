@@ -197,9 +197,7 @@ local ignore_response ; do
 	coroutine.resume(no_response_handler)
 
 	function ignore_response(session_id)
-		if session_coroutine_suspend_lookup[session_id] then
-			session_coroutine_suspend_lookup[session_id] = no_response_handler
-		end
+		session_coroutine_suspend_lookup[session_id] = no_response_handler
 	end
 end
 
@@ -408,7 +406,9 @@ do ------ request/select
 	function request_meta:close()
 		if self._request > 0 then
 			for session, req in pairs(self._sessions) do
-				ignore_response(session)
+				if not self._resp[session] then
+					ignore_response(session)
+				end
 			end
 			self._request = 0
 		end
