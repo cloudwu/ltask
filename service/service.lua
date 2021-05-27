@@ -197,7 +197,9 @@ local ignore_response ; do
 	coroutine.resume(no_response_handler)
 
 	function ignore_response(session_id)
-		session_coroutine_suspend_lookup[session_id] = no_response_handler
+		if session_coroutine_suspend_lookup[session_id] then
+			session_coroutine_suspend_lookup[session_id] = no_response_handler
+		end
 	end
 end
 
@@ -292,18 +294,47 @@ function ltask.log(...)
 end
 
 do ------ request/select
+	local function request_thread(self)
+		local co = new_thread(function()
+			while true do
+				local type, session, msg, sz = yield_session()
+				if session == self._timeout then
+					self.timeout = true
+					self._timeout = nil
+				elseif type == MESSAGE_RESPONSE then
+					self._resp[session] = { ltask.unpack_remove(msg, sz) }
+				else
+					self._request = self._request - 1
+					local req = self._sessions[session]
+					req.error = (ltask.unpack_remove(msg, sz))	-- todo : multiple error objects
+					local err = self._error
+					if not err then
+						err = {}
+						self._error = err
+					end
+					err[#err+1] =req
+				end
+				ltask.wakeup(self)
+			end
+		end)
+		coroutine.resume(co)
+		return co
+	end
+
 	local function send_requests(self, timeout)
 		local sessions = {}
 		self._sessions = sessions
+		self._resp = {}
 		local request_n = 0
 		local err
+		local req_thread = request_thread(self)
 		for i = 1, #self do
 			local req = self[i]
 			-- send request
 			local address = req[1]
 			local proto = req.proto and assert(SELECT_PROTO[req.proto]) or MESSAGE_REQUEST
 			local session = session_id
-			session_coroutine_suspend_lookup[session] = running_thread
+			session_coroutine_suspend_lookup[session] = req_thread
 			session_id = session_id + 1
 
 			if not ltask.post_message(address, session, proto, ltask.pack(table.unpack(req, 2))) then
@@ -316,7 +347,7 @@ do ------ request/select
 			end
 		end
 		if timeout then
-			session_coroutine_suspend_lookup[session_id] = running_thread
+			session_coroutine_suspend_lookup[session_id] = req_thread
 			ltask.timer_add(session_id, timeout)
 			self._timeout = session_id
 			session_id = session_id + 1
@@ -335,35 +366,32 @@ do ------ request/select
 	local function request_iter(self)
 		local timeout_session = self._timeout
 		return function()
-			if self._error then
-				-- invalid address
-				local e = table.remove(self._error)
-				if e then
-					return e
-				end
-				self._error = nil
-			end
-			if self._request == 0 then
-				-- done, finish
-				ignore_timout(self)
-				return
+			if self._error and #self._error > 0 then
+				return table.remove(self._error)
 			end
 
-			local type, session, msg, sz = yield_session()
-			if session == timeout_session then
-				-- timeout, finish
-				self._timeout = nil
-				return
+			local session, resp = next(self._resp)
+			if session == nil then
+				if self._request == 0 then
+					return
+				end
+				if self.timeout then
+					return
+				end
+				ltask.wait(self)
+				if self.timeout then
+					return
+				end
+				session, resp = next(self._resp)
+				if session == nil then
+					return table.remove(self._error)
+				end
 			end
+
 			self._request = self._request - 1
 			local req = self._sessions[session]
-			if type == MESSAGE_RESPONSE then
-				self._sessions[session] = nil
-				return req, { ltask.unpack_remove(msg, sz) }
-			else -- type == MESSAGE_ERROR
-				req.error = (ltask.unpack_remove(msg, sz))	-- todo : multiple error objects
-				return req
-			end
+			self._sessions[session] = nil
+			return req, resp
 		end
 	end
 
