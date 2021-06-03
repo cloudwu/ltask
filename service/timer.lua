@@ -25,9 +25,7 @@ end)
 
 local S = {}
 
-print "Timer start"
 function S.quit()
-	print "Timer quit"
 end
 
 return S

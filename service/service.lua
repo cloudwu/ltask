@@ -17,11 +17,6 @@ local SELECT_PROTO = {
 
 local ltask = require "ltask"
 
-
-local function dprint(...)
---	print("DEBUG", ...)
-end
-
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
 local function continue_session()
