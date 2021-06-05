@@ -487,43 +487,55 @@ thread_worker(void *ud) {
 }
 
 static void
+exclusive_message(struct exclusive_thread *e) {
+	struct service_pool * P = e->task->services;
+	int queue_len = queue_length(e->sending);
+	service_id id = e->service;
+	struct message *message_out = service_message_out(P, id);
+	if (message_out || queue_len > 0) {
+		int total_worker = e->task->config->worker;
+		acquire_scheduler_exclusive(e);
+		if (message_out) {
+			dispatch_out_message(e->task, id, message_out);
+		}
+		dispatch_exclusive_sending(e, e->sending);
+		int jobs = schedule_dispatch(e->task);
+		int active_worker = atomic_int_load(&e->task->active_worker);
+		int sleeping_worker = total_worker - active_worker;
+		if (sleeping_worker > 0 && jobs > active_worker) {
+			jobs -= active_worker;
+			int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
+			int i;
+			for (i=0;i<total_worker && wakeup > 0;i++) {
+				wakeup -= worker_wakeup(&e->task->workers[i]);
+			}
+		}
+		release_scheduler_exclusive(e);
+	}
+}
+
+static void
 thread_exclusive(void *ud) {
 	struct exclusive_thread *e = (struct exclusive_thread *)ud;
 	struct service_pool * P = e->task->services;
 	service_id id = e->service;
-	int total_worker = e->task->config->worker;
-	int isdead = 0;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
-	struct queue * sending = e->sending;
 	while (!e->term_signal) {
 		if (service_resume(P, id, thread_id)) {
 			// Resume error : quit
 			break;
 		}
-		int queue_len = queue_length(sending);
-		struct message *message_out = service_message_out(P, id);
-		if (message_out || isdead || queue_len > 0) {
-			acquire_scheduler_exclusive(e);
-			if (message_out) {
-				dispatch_out_message(e->task, id, message_out);
-			}
-			dispatch_exclusive_sending(e, sending);
-			int jobs = schedule_dispatch(e->task);
-			int active_worker = atomic_int_load(&e->task->active_worker);
-			int sleeping_worker = total_worker - active_worker;
-			if (sleeping_worker > 0 && jobs > active_worker) {
-				jobs -= active_worker;
-				int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
-				int i;
-				for (i=0;i<total_worker && wakeup > 0;i++) {
-					wakeup -= worker_wakeup(&e->task->workers[i]);
-				}
-			}
-			release_scheduler_exclusive(e);
-		}
+		exclusive_message(e);
 	}
 	debug_printf(e->logger, "Quit");
 	atomic_int_dec(&e->task->thread_count);
+}
+
+static int
+lexclusive_scheduling(lua_State *L) {
+	struct exclusive_thread *e = (struct exclusive_thread *)lua_touserdata(L, lua_upvalueindex(1));
+	exclusive_message(e);
+	return 0;
 }
 
 static int
@@ -617,7 +629,12 @@ ltask_exclusive(lua_State *L) {
 	if (service_status_get(task->services, e->service) != SERVICE_STATUS_IDLE) {
 		return luaL_error(L, "Service is uninitialized");
 	}
-	service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive);
+	if (service_setp(task->services, e->service, "EXCLUSIVE_HANDLE", e)) {
+		return luaL_error(L, "set EXCLUSIVE_HANDLE fail");
+	}
+	if (service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive)) {
+		return luaL_error(L, "require ltask.exclusive fail");
+	}
 	service_status_set(task->services, e->service, SERVICE_STATUS_EXCLUSIVE);
 	e->task = task;
 #ifdef DEBUGLOG
@@ -1202,10 +1219,18 @@ luaopen_ltask_exclusive(lua_State *L) {
 		{ "send", lexclusive_send_message },
 		{ "timer_update", lexclusive_timer_update },
 		{ "sleep", lexclusive_sleep },
+		{ "scheduling", NULL },
 		{ NULL, NULL },
 	};
 
 	luaL_newlib(L, l);
+
+	if (lua_getfield(L, LUA_REGISTRYINDEX, "EXCLUSIVE_HANDLE") != LUA_TLIGHTUSERDATA)
+		return luaL_error(L, "Not in exclusive service");
+
+	lua_pushcclosure(L, lexclusive_scheduling, 1);
+	lua_setfield(L, -2, "scheduling");
+
 	return 1;
 }
 
