@@ -197,7 +197,7 @@ local ignore_response ; do
 end
 
 function ltask.send(address, ...)
-	local r = post_message_(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
+	local r = ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
 	if r then
 		ignore_response(session_id)
 		session_id = session_id + 1
@@ -499,9 +499,18 @@ SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 	send_response(request(ltask.unpack_remove(msg, sz)))
 end
 
-print = ltask.log
+local function dispatch_wakeup()
+	while #wakeup_queue > 0 do
+		local s = table.remove(wakeup_queue, 1)
+		wakeup_session(table.unpack(s))
+	end
+end
 
-while true do
+local SCHEDULE_IDLE <const> = 1
+local SCHEDULE_QUIT <const> = 2
+local SCHEDULE_SUCCESS <const> = 3
+
+function ltask.schedule_message()
 	local from, session, type, msg, sz = ltask.recv_message()
 	local f = SESSION[type]
 	if f then
@@ -513,23 +522,32 @@ while true do
 		if co == nil then
 			print("Unknown response session : ", session)
 			ltask.remove(msg, sz)
-			break
+			return SCHEDULE_QUIT
 		else
 			session_coroutine_suspend_lookup[session] = nil
 			wakeup_session(co, type, session, msg, sz)
 		end
-	elseif ltask.exclusive_idle then
-		ltask.exclusive_idle()
+	else
+		return SCHEDULE_IDLE
 	end
-
-	while #wakeup_queue > 0 do
-		local s = table.remove(wakeup_queue, 1)
-		wakeup_session(table.unpack(s))
-	end
-
+	dispatch_wakeup()
 	if quit then
+		return SCHEDULE_QUIT
+	end
+	return SCHEDULE_SUCCESS
+end
+
+print = ltask.log
+
+while true do
+	local s = ltask.schedule_message()
+	if s == SCHEDULE_IDLE then
+		if ltask.exclusive_idle then
+			ltask.exclusive_idle()
+			dispatch_wakeup()
+		end
+	elseif s == SCHEDULE_QUIT then
 		break
 	end
-	-- todo : inner thread (fork)
 	yield_service()
 end
