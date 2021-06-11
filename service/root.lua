@@ -154,14 +154,23 @@ ltask.signal_handler(signal_handler)
 
 local function boot()
 	local request = ltask.request()
-	for i, name in ipairs(config.exclusive) do
+	for i, t in ipairs(config.exclusive) do
+		local name, args
+		if type(t) == "table" then
+			name = t[1]
+			table.remove(t, 1)
+			args = t
+		else
+			name = t
+			args = {}
+		end
 		local id = i + 1
 		register_services(id, name)
 		request:add { id, proto = "system", "init", {
 			path = config.lua_path,
 			cpath = config.lua_cpath,
 			filename = searchpath(name),
-			args = {},
+			args = args,
 			exclusive = true,
 		}}
 	end
