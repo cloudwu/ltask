@@ -27,6 +27,9 @@
 #define TYPE_LONG_STRING 5
 #define TYPE_TABLE 6
 
+// hibits 0~31 : ref parent
+#define TYPE_REF 7
+
 #define MAX_COOKIE 32
 #define COMBINE_TYPE(t,v) ((t) | (v) << 3)
 
@@ -38,17 +41,24 @@ struct block {
 	char buffer[BLOCK_SIZE];
 };
 
+struct stack {
+	int depth;
+	int ancestor[MAX_DEPTH];
+};
+
 struct write_block {
 	struct block * head;
 	struct block * current;
 	int len;
 	int ptr;
+	struct stack s;
 };
 
 struct read_block {
 	char * buffer;
 	int len;
 	int ptr;
+	struct stack s;
 };
 
 inline static struct block *
@@ -87,6 +97,7 @@ wb_init(struct write_block *wb , struct block *b) {
 	wb->len = 0;
 	wb->current = wb->head;
 	wb->ptr = 0;
+	wb->s.depth = 0;
 }
 
 static void
@@ -109,6 +120,7 @@ rball_init(struct read_block * rb, char * buffer, int size) {
 	rb->buffer = buffer;
 	rb->len = size;
 	rb->ptr = 0;
+	rb->s.depth = 0;
 }
 
 static void *
@@ -208,11 +220,11 @@ wb_string(struct write_block *wb, const char *str, int len) {
 	}
 }
 
-static void pack_one(lua_State *L, struct write_block *b, int index, int depth);
+static void pack_one(lua_State *L, struct write_block *b, int index);
 
 static int
-wb_table_array(lua_State *L, struct write_block * wb, int index, int depth) {
-	int array_size = lua_rawlen(L,index);
+wb_table_array(lua_State *L, struct write_block * wb, int index) {
+	int array_size = (int)lua_rawlen(L,index);
 	if (array_size >= MAX_COOKIE-1) {
 		uint8_t n = COMBINE_TYPE(TYPE_TABLE, MAX_COOKIE-1);
 		wb_push(wb, &n, 1);
@@ -225,7 +237,7 @@ wb_table_array(lua_State *L, struct write_block * wb, int index, int depth) {
 	int i;
 	for (i=1;i<=array_size;i++) {
 		lua_rawgeti(L,index,i);
-		pack_one(L, wb, -1, depth);
+		pack_one(L, wb, -1);
 		lua_pop(L,1);
 	}
 
@@ -233,7 +245,7 @@ wb_table_array(lua_State *L, struct write_block * wb, int index, int depth) {
 }
 
 static void
-wb_table_hash(lua_State *L, struct write_block * wb, int index, int depth, int array_size) {
+wb_table_hash(lua_State *L, struct write_block * wb, int index, int array_size) {
 	lua_pushnil(L);
 	while (lua_next(L, index) != 0) {
 		if (lua_type(L,-2) == LUA_TNUMBER) {
@@ -245,15 +257,15 @@ wb_table_hash(lua_State *L, struct write_block * wb, int index, int depth, int a
 				}
 			}
 		}
-		pack_one(L,wb,-2,depth);
-		pack_one(L,wb,-1,depth);
+		pack_one(L,wb,-2);
+		pack_one(L,wb,-1);
 		lua_pop(L, 1);
 	}
 	wb_nil(wb);
 }
 
 static void
-wb_table_metapairs(lua_State *L, struct write_block *wb, int index, int depth) {
+wb_table_metapairs(lua_State *L, struct write_block *wb, int index) {
 	uint8_t n = COMBINE_TYPE(TYPE_TABLE, 0);
 	wb_push(wb, &n, 1);
 	lua_pushvalue(L, index);
@@ -268,30 +280,50 @@ wb_table_metapairs(lua_State *L, struct write_block *wb, int index, int depth) {
 			lua_pop(L, 4);
 			break;
 		}
-		pack_one(L, wb, -2, depth);
-		pack_one(L, wb, -1, depth);
+		pack_one(L, wb, -2);
+		pack_one(L, wb, -1);
 		lua_pop(L, 1);
 	}
 	wb_nil(wb);
 }
 
 static void
-wb_table(lua_State *L, struct write_block *wb, int index, int depth) {
+wb_table(lua_State *L, struct write_block *wb, int index) {
 	luaL_checkstack(L, LUA_MINSTACK, NULL);
 	if (index < 0) {
 		index = lua_gettop(L) + index + 1;
 	}
 	if (luaL_getmetafield(L, index, "__pairs") != LUA_TNIL) {
-		wb_table_metapairs(L, wb, index, depth);
+		wb_table_metapairs(L, wb, index);
 	} else {
-		int array_size = wb_table_array(L, wb, index, depth);
-		wb_table_hash(L, wb, index, depth, array_size);
+		int array_size = wb_table_array(L, wb, index);
+		wb_table_hash(L, wb, index, array_size);
 	}
 }
 
+static int
+ref_ancestor(lua_State *L, struct write_block *b, int index) {
+	struct stack *s = &b->s;
+	int n = s->depth;
+	if (n == 0)
+		return 0;
+	int i;
+	const void * obj = lua_topointer(L, index);
+	for (i=n-1;i>=0;i--) {
+		const void * ancestor = lua_topointer(L, s->ancestor[i]);
+		if (ancestor == obj) {
+			uint8_t n = COMBINE_TYPE(TYPE_REF, i);
+			wb_push(b, &n, 1);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static void
-pack_one(lua_State *L, struct write_block *b, int index, int depth) {
-	if (depth > MAX_DEPTH) {
+pack_one(lua_State *L, struct write_block *b, int index) {
+	struct stack *s = &b->s;
+	if (s->depth >= MAX_DEPTH) {
 		wb_free(b);
 		luaL_error(L, "serialize can't pack too depth table");
 	}
@@ -326,7 +358,12 @@ pack_one(lua_State *L, struct write_block *b, int index, int depth) {
 		if (index < 0) {
 			index = lua_gettop(L) + index + 1;
 		}
-		wb_table(L, b, index, depth+1);
+		if (ref_ancestor(L, b, index))
+			break;
+		s->ancestor[s->depth] = index;
+		++s->depth;
+		wb_table(L, b, index);
+		--s->depth;
 		break;
 	}
 	default:
@@ -340,7 +377,7 @@ pack_from(lua_State *L, struct write_block *b, int from) {
 	int n = lua_gettop(L) - from;
 	int i;
 	for (i=1;i<=n;i++) {
-		pack_one(L, b , from + i, 0);
+		pack_one(L, b , from + i);
 	}
 }
 
@@ -440,24 +477,40 @@ unpack_table(lua_State *L, struct read_block *rb, int array_size) {
 		if ((type & 7) != TYPE_NUMBER || cookie == TYPE_NUMBER_REAL) {
 			invalid_stream(L,rb);
 		}
-		array_size = get_integer(L,rb,cookie);
+		array_size = (int)get_integer(L,rb,cookie);
 	}
+	struct stack *s = &rb->s;
 	luaL_checkstack(L,LUA_MINSTACK,NULL);
 	lua_createtable(L,array_size,0);
+	if (s->depth >= MAX_DEPTH)
+		luaL_error(L, "Invalid layer %d", s->depth);
+	s->ancestor[s->depth] = lua_gettop(L);
+	++s->depth;
 	int i;
 	for (i=1;i<=array_size;i++) {
 		unpack_one(L,rb);
 		lua_rawseti(L,-2,i);
 	}
+	--s->depth;
 	for (;;) {
 		unpack_one(L,rb);
 		if (lua_isnil(L,-1)) {
 			lua_pop(L,1);
 			return;
 		}
+		++s->depth;
 		unpack_one(L,rb);
+		--s->depth;
 		lua_rawset(L,-3);
 	}
+}
+
+static void
+unpack_ref(lua_State *L, struct read_block *rb, int ref) {
+	struct stack *s = &rb->s;
+	if (ref >= s->depth)
+		luaL_error(L, "Invalid ref object %d/%d", ref, s->depth);
+	lua_pushvalue(L, s->ancestor[ref]);
 }
 
 static void
@@ -505,14 +558,15 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 		}
 		break;
 	}
-	case TYPE_TABLE: {
+	case TYPE_TABLE:
 		unpack_table(L,rb,cookie);
 		break;
-	}
-	default: {
+	case TYPE_REF:
+		unpack_ref(L,rb,cookie);
+		break;
+	default:
 		invalid_stream(L,rb);
 		break;
-	}
 	}
 }
 
@@ -527,11 +581,11 @@ unpack_one(lua_State *L, struct read_block *rb) {
 	push_value(L, rb, type & 0x7, type>>3);
 }
 
-static void
-seri(lua_State *L, struct block *b, int len) {
-	uint8_t * buffer = malloc(len);
-	uint8_t * ptr = buffer;
-	int sz = len;
+static void *
+seri(struct block *b, int len) {
+	uint8_t * buffer = malloc(len + 4);
+	memcpy(buffer, &len, 4);	// write length
+	uint8_t * ptr = buffer + 4;
 	while(len>0) {
 		if (len >= BLOCK_SIZE) {
 			memcpy(ptr, b->buffer, BLOCK_SIZE);
@@ -543,40 +597,23 @@ seri(lua_State *L, struct block *b, int len) {
 			break;
 		}
 	}
-	
-	lua_pushlightuserdata(L, buffer);
-	lua_pushinteger(L, sz);
+
+	return buffer;
 }
 
-int
-luaseri_unpack(lua_State *L) {
-	if (lua_isnoneornil(L,1)) {
-		return 0;
-	}
-	void * buffer;
-	int len;
-	if (lua_type(L,1) == LUA_TSTRING) {
-		size_t sz;
-		 buffer = (void *)lua_tolstring(L,1,&sz);
-		len = (int)sz;
-	} else {
-		buffer = lua_touserdata(L,1);
-		len = luaL_checkinteger(L,2);
-	}
-	if (len == 0) {
-		return 0;
-	}
-	if (buffer == NULL) {
-		return luaL_error(L, "deserialize null pointer");
-	}
+static int
+seri_unpack_(lua_State *L) {
+	void *buffer = lua_touserdata(L, 1);
+	lua_pop(L, 1);
+	int len = 0;
+	memcpy(&len, buffer, 4);	// get length
 
-	lua_settop(L,1);
 	struct read_block rb;
-	rball_init(&rb, buffer, len);
+	rball_init(&rb, (char *)buffer + 4, len);
 
 	int i;
 	for (i=0;;i++) {
-		if (i%8==7) {
+		if (i%8==0) {
 			luaL_checkstack(L,LUA_MINSTACK,NULL);
 		}
 		uint8_t type = 0;
@@ -587,22 +624,93 @@ luaseri_unpack(lua_State *L) {
 		push_value(L, &rb, type & 0x7, type>>3);
 	}
 
-	// Need not free buffer
-
-	return lua_gettop(L) - 1;
+	return lua_gettop(L);
 }
 
 int
-luaseri_pack(lua_State *L) {
+seri_unpackptr(lua_State *L, void *buffer) {
+	int top = lua_gettop(L);
+	lua_pushcfunction(L, seri_unpack_);
+	lua_pushlightuserdata(L, buffer);
+	int err = lua_pcall(L, 1, LUA_MULTRET, 0);
+	free(buffer);
+	if (err != LUA_OK) {
+		lua_error(L);
+	}
+	return lua_gettop(L) - top;
+}
+
+int
+seri_unpack(lua_State *L) {
+	const char * buffer = luaL_checkstring(L, 1);
+	lua_settop(L, 1);
+	lua_pushcfunction(L, seri_unpack_);
+	lua_pushlightuserdata(L, (void *)buffer);
+	if (lua_pcall(L, 1, LUA_MULTRET, 0) != LUA_OK) {
+		lua_error(L);
+	}
+	return lua_gettop(L) - 1;
+}
+
+void *
+seri_pack(lua_State *L, int from, int *sz) {
 	struct block temp;
 	temp.next = NULL;
 	struct write_block wb;
 	wb_init(&wb, &temp);
-	pack_from(L,&wb,0);
+
+	pack_from(L,&wb,from);
 	assert(wb.head == &temp);
-	seri(L, &temp, wb.len);
+
+	void * buffer = seri(&temp, wb.len);
+
+	if (sz) {
+		*sz = wb.len + 4;
+	}
 
 	wb_free(&wb);
 
+	return buffer;
+}
+
+void *
+seri_packstring(const char * str, int sz) {
+	struct block temp;
+	temp.next = NULL;
+	struct write_block wb;
+	wb_init(&wb, &temp);
+
+	wb_string(&wb, str, sz);
+	assert(wb.head == &temp);
+
+	void * buffer = seri(&temp, wb.len);
+
+	wb_free(&wb);
+
+	return buffer;
+}
+
+int
+luaseri_unpack(lua_State *L) {
+	if (lua_isnoneornil(L, 1)) {
+		return 0;
+	}
+	return seri_unpack_(L);
+}
+
+int
+luaseri_unpack_remove(lua_State *L) {
+	if (lua_isnoneornil(L, 1)) {
+		return 0;
+	}
+	return seri_unpackptr(L, lua_touserdata(L, 1));
+}
+
+int
+luaseri_pack(lua_State *L) {
+	int sz = 0;
+	void * buffer = seri_pack(L, 0, &sz);
+	lua_pushlightuserdata(L, buffer);
+	lua_pushinteger(L, sz);
 	return 2;
 }
