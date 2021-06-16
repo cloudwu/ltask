@@ -11,9 +11,10 @@ local MESSAGE_SCHEDULE_HANG <const> = 2
 
 local S = {}
 
-local ANONYMOUS_SERVICES = {}
-local NAMED_SERVICES = {}
-local NAMED_ORDER = 0
+local anonymous_services = {}
+local named_services = {}
+local labels = {}
+
 
 local function writelog()
 	while true do
@@ -28,7 +29,7 @@ local function writelog()
 		for i = 1, t.n do
 			str[#str+1] = tostring(t[i])
 		end
-		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, labels[id], table.concat(str, "\t")))
 	end
 end
 
@@ -50,7 +51,7 @@ local function searchpath(name)
 end
 
 local function init_service(address, name, ...)
-	root.init_service(address, "@"..searchpath "service")
+	root.init_service(address, name, "@"..searchpath "service")
 	ltask.syscall(address, "init", {
 		path = config.lua_path,
 		cpath = config.lua_cpath,
@@ -59,17 +60,40 @@ local function init_service(address, name, ...)
 	})
 end
 
+local tokenmap = {}
+local function multiwait(key)
+	local mtoken = tokenmap[key]
+	if not mtoken then
+		mtoken = {}
+		tokenmap[key] = mtoken
+	end
+	local t = {}
+	mtoken[#mtoken+1] = t
+	return ltask.wait(t)
+end
+
+local function multiwakeup(key, ...)
+	local mtoken = tokenmap[key]
+	if mtoken then
+		tokenmap[key] = nil
+		for _, token in ipairs(mtoken) do
+			ltask.wakeup(token, ...)
+		end
+	end
+end
+
 function S.report_error(addr, session, errobj)
 	ltask.error(addr, session, errobj)
 end
 
 function S.spawn(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
-	ANONYMOUS_SERVICES[address] = true
+	anonymous_services[address] = true
+	labels[address] = name
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
 		S.kill(address)
-		ANONYMOUS_SERVICES[address] = nil
+		anonymous_services[address] = nil
 		error(err)
 	end
 	return address
@@ -82,19 +106,18 @@ function S.kill(address)
 	return false
 end
 
+function S.label(address)
+	return labels[address]
+end
+
 local function register_services(address, name)
-	if NAMED_SERVICES[name] then
+	if named_services[name] then
 		error(("Name `%s` already exists."):format(name))
 	end
-	ANONYMOUS_SERVICES[address] = nil
-	NAMED_ORDER = NAMED_ORDER + 1
-	NAMED_SERVICES[name] = {
-		name = name,
-		address = address,
-		status = "running",
-		order = NAMED_ORDER,
-	}
-	NAMED_SERVICES[NAMED_ORDER] = name
+	anonymous_services[address] = nil
+	named_services[#named_services+1] = name
+	named_services[name] = address
+	multiwakeup(name, address)
 end
 
 function S.register(name)
@@ -103,20 +126,19 @@ function S.register(name)
 end
 
 function S.query(name)
-	local s = NAMED_SERVICES[name]
-	if s then
-		return s.address
+	local address = named_services[name]
+	if address then
+		return address
 	end
+	return multiwait(name)
 end
 
 local function del_service(address)
-	if ANONYMOUS_SERVICES[address] then
-		ANONYMOUS_SERVICES[address] = nil
+	if anonymous_services[address] then
+		anonymous_services[address] = nil
 	else
-		for _, name in ipairs(NAMED_SERVICES) do
-			local s = NAMED_SERVICES[name]
-			if s.address == address then
-				s.status = "dead"
+		for _, name in ipairs(named_services) do
+			if named_services[name] == address then
 				break
 			end
 		end
@@ -134,15 +156,15 @@ end
 
 local function signal_handler(from)
 	del_service(from)
-	if next(ANONYMOUS_SERVICES) == nil then
+	if next(anonymous_services) == nil then
 		ltask.signal_handler(del_service)
 
-		for i = #NAMED_SERVICES, 1, -1 do
-			local name = NAMED_SERVICES[i]
-			local s = NAMED_SERVICES[name]
-			local ok, err = pcall(ltask.syscall, s.address, "quit")
+		for i = #named_services, 1, -1 do
+			local name = named_services[i]
+			local address = named_services[name]
+			local ok, err = pcall(ltask.syscall, address, "quit")
 			if not ok then
-				print(string.format("named service %s(%d) quit error: %s.", s.name, s.address, err))
+				print(string.format("named service %s(%d) quit error: %s.", name, address, err))
 			end
 		end
 		writelog()
@@ -153,6 +175,7 @@ end
 ltask.signal_handler(signal_handler)
 
 local function boot()
+	labels[0] = "system"
 	local request = ltask.request()
 	for i, t in ipairs(config.exclusive) do
 		local name, args
@@ -165,6 +188,7 @@ local function boot()
 			args = {}
 		end
 		local id = i + 1
+		labels[id] = name
 		register_services(id, name)
 		request:add { id, proto = "system", "init", {
 			path = config.lua_path,

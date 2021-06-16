@@ -15,14 +15,14 @@ local function searchpath(name)
 	return assert(package.searchpath(name, config.service_path))
 end
 
-local function new_service(id)
-	local sid = boot.new_service("@" .. searchpath "service", id)
+local function new_service(label, id)
+	local sid = boot.new_service(label, "@" .. searchpath "service", id)
 	assert(sid == id)
 	return sid
 end
 
 local function bootstrap()
-	new_service(SERVICE_ROOT)
+	new_service("root", SERVICE_ROOT)
 	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
 	local init_msg, sz = ltask.pack("init", {
@@ -42,8 +42,8 @@ local function bootstrap()
 	}
 end
 
-local function exclusive_thread(id)
-	local sid = new_service(id)
+local function exclusive_thread(label, id)
+	local sid = new_service(label, id)
 	boot.new_thread(sid)
 end
 
@@ -55,8 +55,10 @@ init_config()
 boot.init(config)
 boot.init_timer()
 
-for id = 2, 1 + #config.exclusive do
-	exclusive_thread(id)
+for i, t in ipairs(config.exclusive) do
+	local label = type(t) == "table" and t[1] or t
+	local id = i + 1
+	exclusive_thread(label, id)
 end
 
 bootstrap()	-- launch root

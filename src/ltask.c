@@ -742,7 +742,7 @@ ltask_deinit(lua_State *L) {
 }
 
 static void
-newservice(lua_State *L, struct ltask *task, service_id id, const char *filename_source) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
@@ -750,28 +750,34 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *filename
 	if (service_init(S, id, (void *)&ud, sizeof(ud)) || service_requiref(S, id, "ltask", luaopen_ltask)) {
 		service_delete(S, id);
 		luaL_error(L, "New services faild");
+		return;
+	}
+	if (service_sets(task->services, id, "SERVICE_LABEL", label)) {
+		service_delete(S, id);
+		luaL_error(L, "set SERVICE_LABEL fail");
+		return;
+	}
+	const char * err = NULL;
+	if (filename_source[0] == '@') {
+		err = service_loadfile(S, id, filename_source+1);
 	} else {
-		const char * err = NULL;
-		if (filename_source[0] == '@') {
-			err = service_loadfile(S, id, filename_source+1);
-		} else {
-			err = service_loadstring(S, id, filename_source);
-		}
-		if (err) {
-			lua_pushstring(L, err);
-			service_delete(S, id);
-			lua_error(L);
-		}
+		err = service_loadstring(S, id, filename_source);
+	}
+	if (err) {
+		lua_pushstring(L, err);
+		service_delete(S, id);
+		lua_error(L);
 	}
 }
 
 static int
 ltask_newservice(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
-	const char *filename_source = luaL_checkstring(L, 1);
-	unsigned int sid = luaL_optinteger(L, 2, 0);
+	const char *label = luaL_checkstring(L, 1);
+	const char *filename_source = luaL_checkstring(L, 2);
+	unsigned int sid = luaL_optinteger(L, 3, 0);
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, filename_source);
+	newservice(L, task, id, label, filename_source);
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -1238,10 +1244,11 @@ static int
 ltask_initservice(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	unsigned int sid = luaL_checkinteger(L, 1);
-	const char *filename_source = luaL_checkstring(L, 2);
+	const char *label = luaL_checkstring(L, 2);
+	const char *filename_source = luaL_checkstring(L, 3);
 
 	service_id id = { sid };
-	newservice(L, S->task, id, filename_source);
+	newservice(L, S->task, id, label, filename_source);
 
 	return 0;
 }

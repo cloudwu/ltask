@@ -216,6 +216,31 @@ service_setp(struct service_pool *p, service_id id, const char *key, void *value
 	return 0;
 }
 
+static int
+sets(lua_State *L) {
+	const char * key = (const char *)lua_touserdata(L, 1);
+	const char * value = (const char *)lua_touserdata(L, 2);
+	lua_pushstring(L, value);
+	lua_setfield(L, LUA_REGISTRYINDEX, key);
+	return 0;
+}
+
+int
+service_sets(struct service_pool *p, service_id id, const char *key, const char *value) {
+	struct service *S = get_service(p, id);
+	if (S == NULL || S->L == NULL)
+		return 1;
+	lua_State *L = S->L;
+	lua_pushcfunction(L, sets);
+	lua_pushlightuserdata(L, (void *)key);
+	lua_pushlightuserdata(L, value);
+	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		lua_pop(L, 1);
+		return 1;
+	}
+	return 0;
+}
+
 void 
 service_close(struct service_pool *p, service_id id) {
 	struct service * s = get_service(p, id);

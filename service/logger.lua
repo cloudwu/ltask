@@ -1,6 +1,17 @@
 local ltask = require "ltask"
+local SERVICE_ROOT <const> = 1
 
 local S = {}
+local lables = {}
+
+local function querylabel(id)
+	local label = lables[id]
+	if not label then
+		label = ltask.call(SERVICE_ROOT, "label", id)
+		lables[id] = label
+	end
+	return label
+end
 
 local function writelog()
 	local flush
@@ -19,7 +30,7 @@ local function writelog()
 		for i = 1, t.n do
 			str[#str+1] = tostring(t[i])
 		end
-		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+		io.write(string.format("[%s.%02d : %-10s]\t%s\n", os.date("%c", tsec), msec, querylabel(id), table.concat(str, "\t")))
 		flush = true
 	end
 end

@@ -31,6 +31,7 @@ service_id service_new(struct service_pool *p, unsigned int id);
 int service_init(struct service_pool *p, service_id id, void *ud, size_t sz);
 int service_requiref(struct service_pool *p, service_id id, const char *name, void *f);
 int service_setp(struct service_pool *p, service_id id, const char *key, void *value);
+int service_sets(struct service_pool *p, service_id id, const char *key, const char *value);
 // 0 succ
 int service_hang(struct service_pool *p, service_id id);
 void service_send_signal(struct service_pool *p, service_id id);
