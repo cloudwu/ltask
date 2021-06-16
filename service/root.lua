@@ -51,7 +51,7 @@ local function searchpath(name)
 end
 
 local function init_service(address, name, ...)
-	root.init_service(address, name, "@"..searchpath "service")
+	root.init_service(address, name, config.init_service or ("@" .. searchpath "service"))
 	ltask.syscall(address, "init", {
 		path = config.lua_path,
 		cpath = config.lua_cpath,

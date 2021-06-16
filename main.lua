@@ -16,7 +16,7 @@ local function searchpath(name)
 end
 
 local function new_service(label, id)
-	local sid = boot.new_service(label, "@" .. searchpath "service", id)
+	local sid = boot.new_service(label, config.init_service or ("@" .. searchpath "service"), id)
 	assert(sid == id)
 	return sid
 end
