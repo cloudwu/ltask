@@ -1121,18 +1121,6 @@ lexclusive_sleep(lua_State *L) {
 }
 
 static int
-lunpack_remove(lua_State *L) {
-	if (lua_isnoneornil(L, 1)) {
-		return 0;
-	}
-	void *msg = lua_touserdata(L, 1);
-	lua_settop(L, 2);
-	int n = luaseri_unpack(L);
-	free(msg);
-	return n;
-}
-
-static int
 lself(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	lua_pushinteger(L, S->id.id);
@@ -1201,7 +1189,7 @@ luaopen_ltask(lua_State *L) {
 		{ "pack", luaseri_pack },
 		{ "unpack", luaseri_unpack },
 		{ "remove", luaseri_remove },
-		{ "unpack_remove", lunpack_remove },
+		{ "unpack_remove", luaseri_unpack_remove },
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
 		{ "message_receipt", lmessage_receipt },
