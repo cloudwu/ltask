@@ -442,6 +442,7 @@ function ltask.quit()
 end
 
 local service
+local sys_service = {}
 
 function ltask.dispatch(handler)
 	service = handler
@@ -455,40 +456,43 @@ function ltask.signal_handler(f)	-- root only
 	end
 end
 
-local function system(command, t)
-	if service == nil then
-		-- The first system message
-		assert(command == "init")
-		if t.path then
-			package.path = t.path
-		end
-		if t.cpath then
-			package.cpath = t.cpath
-		end
-		local _require = _G.require
-		local f = assert(loadfile(t.filename))
-		_G.require = require "ltask.require"
-		if t.exclusive then
-			require "ltask.init_exclusive"
-		end
-		local r = f(table.unpack(t.args))
-		_G.require = _require
-		if service == nil then
-			service = r
-		end
-	else
-		assert(command == "quit")
-		if service.quit then
-			return service.quit()
-		end
+function sys_service.init(t)
+	-- The first system message
+	assert(service == nil)
+	if t.path then
+		package.path = t.path
 	end
+	if t.cpath then
+		package.cpath = t.cpath
+	end
+	local _require = _G.require
+	local f = assert(loadfile(t.filename))
+	_G.require = require "ltask.require"
+	if t.exclusive then
+		require "ltask.init_exclusive"
+	end
+	local r = f(table.unpack(t.args))
+	_G.require = _require
+	if service == nil then
+		service = r
+	end
+	if service == nil then
+		ltask.quit()
+	end
+end
+
+function sys_service.quit()
+	if service and service.quit then
+		return service.quit()
+	end
+end
+
+local function system(command, ...)
+	return sys_service[command](...)
 end
 
 SESSION[MESSAGE_SYSTEM] = function (type, msg, sz)
 	send_response(system(ltask.unpack_remove(msg, sz)))
-	if service == nil then
-		quit = true
-	end
 end
 
 local function request(command, ...)
