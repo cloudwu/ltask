@@ -198,12 +198,16 @@ timer_destroy(struct timer *T) {
 	int i,j;
 	for (i=0;i<TIME_NEAR;i++) {
 		struct timer_node *current = link_clear(&T->n[i]);
-		dispatch_list(current, timer_release_func, NULL);
+		if (current) {
+			dispatch_list(current, timer_release_func, NULL);
+		}
 	}
 	for (i=0;i<4;i++) {
 		for (j=0;j<TIME_LEVEL;j++) {
 			struct timer_node *current = link_clear(&T->t[i][j]);
-			dispatch_list(current, timer_release_func, NULL);
+			if (current) {
+				dispatch_list(current, timer_release_func, NULL);
+			}
 		}
 	}
 	spinlock_release(&T->lock);
