@@ -13,8 +13,10 @@ local S = {}
 
 local anonymous_services = {}
 local named_services = {}
-local labels = {}
-
+local labels = {
+	[0] = "system",
+	[1] = "root",
+}
 
 local function writelog()
 	while true do
@@ -29,7 +31,7 @@ local function writelog()
 		for i = 1, t.n do
 			str[#str+1] = tostring(t[i])
 		end
-		io.write(string.format("[%s.%02d : %08d]\t%s\n", os.date("%c", tsec), msec, labels[id], table.concat(str, "\t")))
+		io.write(string.format("[%s.%02d : %-10s]\t%s\n", os.date("%c", tsec), msec, labels[id], table.concat(str, "\t")))
 	end
 end
 
@@ -37,25 +39,22 @@ do
 	-- root init response to itself
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
-			ltask.log("Root init error:", ltask.unpack(msg, sz))
+			ltask.log("Root init error:", ltask.unpack_remove(msg, sz))
 			writelog()
-			-- todo : quit
+			ltask.quit()
 		end
 	end
 
 	ltask.suspend(0, coroutine.create(init_receipt))
 end
 
-local function searchpath(name)
-	return assert(package.searchpath(name, config.service_path))
-end
-
 local function init_service(address, name, ...)
-	root.init_service(address, name, config.init_service or ("@" .. searchpath "service"))
+	root.init_service(address, name, config.init_service)
 	ltask.syscall(address, "init", {
-		path = config.lua_path,
-		cpath = config.lua_cpath,
-		filename = searchpath(name),
+		lua_path = config.lua_path,
+		lua_cpath = config.lua_cpath,
+		service_path = config.service_path,
+		name = name,
 		args = {...},
 	})
 end
@@ -175,13 +174,11 @@ end
 ltask.signal_handler(signal_handler)
 
 local function boot()
-	labels[0] = "system"
 	local request = ltask.request()
 	for i, t in ipairs(config.exclusive) do
 		local name, args
 		if type(t) == "table" then
-			name = t[1]
-			table.remove(t, 1)
+			name = table.remove(t, 1)
 			args = t
 		else
 			name = t
@@ -191,13 +188,13 @@ local function boot()
 		labels[id] = name
 		register_services(id, name)
 		request:add { id, proto = "system", "init", {
-			path = config.lua_path,
-			cpath = config.lua_cpath,
-			filename = searchpath(name),
+			lua_path = config.lua_path,
+			lua_cpath = config.lua_cpath,
+			service_path = config.service_path,
+			name = name,
 			args = args,
 			exclusive = true,
-		}}
-	end
+		}}	end
 	for req, resp in request:select() do
 		if not resp then
 			error(string.format("exclusive %d init error: %s.", req[1], req.error))

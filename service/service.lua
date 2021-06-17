@@ -459,14 +459,15 @@ end
 function sys_service.init(t)
 	-- The first system message
 	assert(service == nil)
-	if t.path then
-		package.path = t.path
+	if t.lua_path then
+		package.path = t.lua_path
 	end
-	if t.cpath then
-		package.cpath = t.cpath
+	if t.lua_cpath then
+		package.cpath = t.lua_cpath
 	end
 	local _require = _G.require
-	local f = assert(loadfile(t.filename))
+	local filename = assert(package.searchpath(t.name, t.service_path))
+	local f = assert(loadfile(filename))
 	_G.require = require "ltask.require"
 	if t.exclusive then
 		require "ltask.init_exclusive"

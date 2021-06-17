@@ -695,6 +695,7 @@ luaseri_unpack(lua_State *L) {
 	if (lua_isnoneornil(L, 1)) {
 		return 0;
 	}
+	lua_settop(L, 1);
 	return seri_unpack_(L);
 }
 
