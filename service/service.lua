@@ -222,7 +222,11 @@ end
 
 function ltask.sleep(ti)
 	session_coroutine_suspend_lookup[session_id] = running_thread
-	ltask.timer_add(session_id, ti)
+	if ti == 0 then
+		ltask.post_message(ltask.self(), session_id, MESSAGE_RESPONSE)
+	else
+		ltask.timer_add(session_id, ti)
+	end
 	session_id = session_id + 1
 	yield_session()
 end
@@ -270,6 +274,11 @@ function ltask.interrupt(token, errobj)
 		session_waiting[token] = nil
 		return true
 	end
+end
+
+function ltask.fork(func, ...)
+	local co = new_thread(func)
+	wakeup_queue[#wakeup_queue+1] = {co, ...}
 end
 
 function ltask.current_session()
@@ -527,7 +536,7 @@ function ltask.schedule_message()
 		if co == nil then
 			print("Unknown response session : ", session)
 			ltask.remove(msg, sz)
-			return SCHEDULE_QUIT
+			ltask.quit()
 		else
 			session_coroutine_suspend_lookup[session] = nil
 			wakeup_session(co, type, session, msg, sz)
@@ -546,12 +555,7 @@ print = ltask.log
 
 while true do
 	local s = ltask.schedule_message()
-	if s == SCHEDULE_IDLE then
-		if ltask.exclusive_idle then
-			ltask.exclusive_idle()
-			dispatch_wakeup()
-		end
-	elseif s == SCHEDULE_QUIT then
+	if s == SCHEDULE_QUIT then
 		break
 	end
 	yield_service()
