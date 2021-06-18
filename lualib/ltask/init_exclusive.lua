@@ -2,9 +2,9 @@ local ltask = require "ltask"
 local exclusive = require "ltask.exclusive"
 
 local MESSAGE_ERROR <const> = 3
-local SCHEDULE_SUCCESS <const> = 3
 
 local blocked_message
+local retry_blocked_message
 
 local function post_message(address, session, type, msg, sz)
 	if not exclusive.send(address, session, type, msg, sz) then
@@ -17,11 +17,13 @@ local function post_message(address, session, type, msg, sz)
 			blocked_message[n+5] = sz
 		else
 			blocked_message = { address, session, type, msg, sz }
+			ltask.fork(retry_blocked_message)
 		end
 	end
 end
 
-local function retry_blocked_message()
+function retry_blocked_message()
+	ltask.sleep(0)
 	if not blocked_message then
 		return
 	end
@@ -44,27 +46,4 @@ end
 
 function ltask.error(address, session, errobj)
 	post_message(address, session, MESSAGE_ERROR, ltask.pack(errobj))
-end
-
-local idle
-
-function exclusive.idle_func(f)
-	idle = f
-end
-
-function exclusive.schedule_message()
-	retry_blocked_message()
-	repeat
-		exclusive.scheduling()
-	until ltask.schedule_message() ~= SCHEDULE_SUCCESS
-end
-
-function ltask.exclusive_idle()
-	if idle then
-		local ok, err = xpcall(idle, debug.traceback)
-		if not ok then
-			print(err)
-		end
-	end
-	retry_blocked_message()
 end

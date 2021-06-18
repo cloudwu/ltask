@@ -11,15 +11,14 @@ local function send_blocked_message(blocked)
 	end
 end
 
-exclusive.idle_func(function()
-	local blocked = exclusive.timer_update()
-	coroutine.yield()
-	if blocked then
+ltask.fork(function ()
+	while true do
+		local blocked = exclusive.timer_update()
 		exclusive.sleep(1)	-- sleep 1/1000s
-		coroutine.yield()
-		send_blocked_message(blocked)
-	else
-		exclusive.sleep(1)
+		if blocked then
+			send_blocked_message(blocked)
+		end
+		ltask.sleep(0)
 	end
 end)
 
