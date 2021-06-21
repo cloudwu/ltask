@@ -318,6 +318,11 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	if (r == LUA_OK) {
 		return 1;
 	}
+	if (!lua_checkstack(L, LUA_MINSTACK)) {
+		lua_writestringerror("%s\n", lua_tostring(L, -1));
+		lua_pop(L, 1);
+		return 1;
+	}
 	lua_pushfstring(L, "Service %d error: %s", id.id, lua_tostring(L, -1));
 	luaL_traceback(L, L, lua_tostring(L, -1), 0);
 	lua_writestringerror("%s\n", lua_tostring(L, -1));
