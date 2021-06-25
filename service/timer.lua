@@ -22,9 +22,4 @@ ltask.fork(function ()
 	end
 end)
 
-local S = {}
-
-function S.quit()
-end
-
-return S
+return {}
