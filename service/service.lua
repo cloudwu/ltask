@@ -246,7 +246,11 @@ end
 function ltask.timeout(ti, func)
 	local co = new_thread(func)
 	session_coroutine_suspend_lookup[session_id] = co
-	ltask.timer_add(session_id, ti)
+	if ti == 0 then
+		ltask.post_message(ltask.self(), session_id, MESSAGE_RESPONSE)
+	else
+		ltask.timer_add(session_id, ti)
+	end
 	session_id = session_id + 1
 end
 
