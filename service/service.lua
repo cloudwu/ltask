@@ -159,6 +159,18 @@ local function send_response(...)
 	end
 end
 
+local function send_error(errobj)
+	local from = session_coroutine_address[running_thread]
+	local session = session_coroutine_response[running_thread]
+	-- End session
+	session_coroutine_address[running_thread] = nil
+	session_coroutine_response[running_thread] = nil
+
+	if session and session > 0 then
+		ltask.error(from, session, errobj)
+	end
+end
+
 ------------- ltask lua api
 
 function ltask.suspend(session, co)
@@ -581,19 +593,29 @@ function sys_service.quit()
 end
 
 local function system(command, ...)
-	return sys_service[command](...)
+	local s = sys_service[command]
+	if not s then
+		send_error("Unknown system message : " .. command)
+		return
+	end
+	send_response(s(...))
 end
 
 SESSION[MESSAGE_SYSTEM] = function (type, msg, sz)
-	send_response(system(ltask.unpack_remove(msg, sz)))
+	system(ltask.unpack_remove(msg, sz))
 end
 
 local function request(command, ...)
-	return service[command](...)
+	local s = service[command]
+	if not s then
+		send_error("Unknown request message : " .. command)
+		return
+	end
+	send_response(s(...))
 end
 
 SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
-	send_response(request(ltask.unpack_remove(msg, sz)))
+	request(ltask.unpack_remove(msg, sz))
 end
 
 local function dispatch_wakeup()
