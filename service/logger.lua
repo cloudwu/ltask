@@ -35,14 +35,12 @@ local function writelog()
 	end
 end
 
-local function loop()
+ltask.fork(function()
 	while true do
 		writelog()
 		ltask.sleep(100)
 	end
-end
-
-ltask.timeout(0, loop)
+end)
 
 function S.quit()
 	writelog()
