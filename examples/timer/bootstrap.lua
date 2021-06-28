@@ -1,12 +1,11 @@
 local ltask = require "ltask"
-local manager = require "ltask.manager"
 
 local arg = ...
 
 print "Bootstrap Begin"
 print(os.date("%c", (ltask.now())))
 
-local addr = manager.spawn("user", "Hello")
+local addr = ltask.spawn("user", "Hello")
 
 print("Spawn user", addr)
 
