@@ -48,6 +48,38 @@ do
 	ltask.suspend(0, coroutine.create(init_receipt))
 end
 
+local tokenmap = {}
+local function multi_wait(key)
+	local mtoken = tokenmap[key]
+	if not mtoken then
+		mtoken = {}
+		tokenmap[key] = mtoken
+	end
+	local t = {}
+	mtoken[#mtoken+1] = t
+	return ltask.wait(t)
+end
+
+local function multi_wakeup(key, ...)
+	local mtoken = tokenmap[key]
+	if mtoken then
+		tokenmap[key] = nil
+		for _, token in ipairs(mtoken) do
+			ltask.wakeup(token, ...)
+		end
+	end
+end
+
+local function multi_interrupt(key, ...)
+	local mtoken = tokenmap[key]
+	if mtoken then
+		tokenmap[key] = nil
+		for _, token in ipairs(mtoken) do
+			ltask.interrupt(token, ...)
+		end
+	end
+end
+
 local function init_service(address, name, ...)
 	root.init_service(address, name, config.init_service)
 	ltask.syscall(address, "init", {
@@ -59,33 +91,7 @@ local function init_service(address, name, ...)
 	})
 end
 
-local tokenmap = {}
-local function multiwait(key)
-	local mtoken = tokenmap[key]
-	if not mtoken then
-		mtoken = {}
-		tokenmap[key] = mtoken
-	end
-	local t = {}
-	mtoken[#mtoken+1] = t
-	return ltask.wait(t)
-end
-
-local function multiwakeup(key, ...)
-	local mtoken = tokenmap[key]
-	if mtoken then
-		tokenmap[key] = nil
-		for _, token in ipairs(mtoken) do
-			ltask.wakeup(token, ...)
-		end
-	end
-end
-
-function S.report_error(addr, session, errobj)
-	ltask.error(addr, session, errobj)
-end
-
-function S.spawn(name, ...)
+local function new_service(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
 	anonymous_services[address] = true
 	labels[address] = name
@@ -93,6 +99,29 @@ function S.spawn(name, ...)
 	if not ok then
 		S.kill(address)
 		anonymous_services[address] = nil
+		labels[address] = nil
+		return nil, err
+	end
+	return address
+end
+
+local function register_service(address, name)
+	if named_services[name] then
+		error(("Name `%s` already exists."):format(name))
+	end
+	anonymous_services[address] = nil
+	named_services[#named_services+1] = name
+	named_services[name] = address
+	multi_wakeup("query."..name, address)
+end
+
+function S.report_error(addr, session, errobj)
+	ltask.error(addr, session, errobj)
+end
+
+function S.spawn(name, ...)
+	local address, err = new_service(name, ...)
+	if not address then
 		error(err)
 	end
 	return address
@@ -109,27 +138,38 @@ function S.label(address)
 	return labels[address]
 end
 
-local function register_services(address, name)
-	if named_services[name] then
-		error(("Name `%s` already exists."):format(name))
-	end
-	anonymous_services[address] = nil
-	named_services[#named_services+1] = name
-	named_services[name] = address
-	multiwakeup(name, address)
-end
-
 function S.register(name)
 	local session = ltask.current_session()
-	register_services(session.from, name)
+	register_service(session.from, name)
 end
 
-function S.query(name)
+function S.queryservice(name)
 	local address = named_services[name]
 	if address then
 		return address
 	end
-	return multiwait(name)
+	return multi_wait("query."..name)
+end
+
+function S.uniqueservice(name, ...)
+	local address = named_services[name]
+	if address then
+		return address
+	end
+	local key = "unique."..name
+	if not tokenmap[key] then
+		local args = table.pack(...)
+		ltask.fork(function ()
+			local addr, err = new_service(name, table.unpack(args, args.n))
+			if not addr then
+				multi_interrupt(key, err)
+			else
+				register_service(addr, name)
+				multi_wakeup(key, addr)
+			end
+		end)
+	end
+	return multi_wait(key)
 end
 
 local function del_service(address)
@@ -186,7 +226,7 @@ local function boot()
 		end
 		local id = i + 1
 		labels[id] = name
-		register_services(id, name)
+		register_service(id, name)
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
@@ -194,14 +234,14 @@ local function boot()
 			name = name,
 			args = args,
 			exclusive = true,
-		}}	end
+		}}
+	end
 	for req, resp in request:select() do
 		if not resp then
 			error(string.format("exclusive %d init error: %s.", req[1], req.error))
 		end
 	end
-	local logger = S.spawn(table.unpack(config.logger))
-	register_services(logger, "logger")
+	S.uniqueservice(table.unpack(config.logger))
 	S.spawn(table.unpack(config.bootstrap))
 end
 
