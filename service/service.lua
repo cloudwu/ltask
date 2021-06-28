@@ -311,6 +311,26 @@ function ltask.log(...)
 	ltask.pushlog(ltask.pack(...))
 end
 
+function ltask.spawn(name, ...)
+    return ltask.call(SERVICE_ROOT, "spawn", name, ...)
+end
+
+function ltask.kill(addr)
+    return ltask.call(SERVICE_ROOT, "kill", addr)
+end
+
+function ltask.register(name)
+    return ltask.call(SERVICE_ROOT, "register", name)
+end
+
+function ltask.queryservice(name)
+    return ltask.call(SERVICE_ROOT, "queryservice", name)
+end
+
+function ltask.uniqueservice(name)
+    return ltask.call(SERVICE_ROOT, "uniqueservice", name)
+end
+
 do ------ request/select
 	local function request_thread(self)
 		local co = new_thread(function()
