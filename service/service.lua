@@ -327,8 +327,8 @@ function ltask.queryservice(name)
     return ltask.call(SERVICE_ROOT, "queryservice", name)
 end
 
-function ltask.uniqueservice(name)
-    return ltask.call(SERVICE_ROOT, "uniqueservice", name)
+function ltask.uniqueservice(name, ...)
+    return ltask.call(SERVICE_ROOT, "uniqueservice", name, ...)
 end
 
 do ------ request/select

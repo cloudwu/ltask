@@ -158,16 +158,15 @@ function S.uniqueservice(name, ...)
 	end
 	local key = "unique."..name
 	if not tokenmap[key] then
-		local args = table.pack(...)
-		ltask.fork(function ()
-			local addr, err = new_service(name, table.unpack(args, args.n))
+		ltask.fork(function (...)
+			local addr, err = new_service(name, ...)
 			if not addr then
 				multi_interrupt(key, err)
 			else
 				register_service(addr, name)
 				multi_wakeup(key, addr)
 			end
-		end)
+		end, ...)
 	end
 	return multi_wait(key)
 end
