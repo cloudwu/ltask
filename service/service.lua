@@ -63,6 +63,7 @@ local session_id = 1
 
 local session_waiting = {}
 local wakeup_queue = {}
+local exclusive_service = false
 
 local function report_error(addr, session, errobj)
 	ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, ltask.pack("report_error", addr, session, errobj))
@@ -477,13 +478,15 @@ end
 local quit
 
 function ltask.quit()
-	ltask.timeout(0, function ()
-		for co, addr in pairs(session_coroutine_address) do
-			local session = session_coroutine_response[co]
-			ltask.error(addr, session, "Service has been quit.")
-		end
-		quit = true
-	end)
+	if not exclusive_service then
+		ltask.fork(function ()
+			for co, addr in pairs(session_coroutine_address) do
+				local session = session_coroutine_response[co]
+				ltask.error(addr, session, "Service has been quit.")
+			end
+			quit = true
+		end)
+	end
 end
 
 local service
@@ -541,6 +544,7 @@ local yieldable_require; do
 end
 
 local function init_exclusive()
+	exclusive_service = true
 	local exclusive = require "ltask.exclusive"
 	local blocked_message
 	local retry_blocked_message
