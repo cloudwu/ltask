@@ -98,8 +98,6 @@ local function new_service(name, ...)
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
 		S.kill(address)
-		anonymous_services[address] = nil
-		labels[address] = nil
 		return nil, err
 	end
 	return address
@@ -172,6 +170,7 @@ function S.uniqueservice(name, ...)
 end
 
 local function del_service(address)
+	labels[address] = nil
 	if anonymous_services[address] then
 		anonymous_services[address] = nil
 	else
