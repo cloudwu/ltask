@@ -508,6 +508,20 @@ local yieldable_require; do
 	local require = _G.require
 	local loaded = package.loaded
 	local loading = {}
+	local function findloader(name)
+		local msg = ''
+		local searchers = package.searchers
+		assert(type(searchers) == "table", "'package.searchers' must be a table")
+		for _, searcher in ipairs(searchers) do
+			local f, extra = searcher(name)
+			if type(f) == 'function' then
+				return f, extra
+			elseif type(f) == 'string' then
+				msg = msg .. "\n\t" .. f
+			end
+		end
+		error(("module '%s' not found:%s"):format(name, msg))
+	end
 	function yieldable_require(name)
 		local m = loaded[name]
 		if m ~= nil then
@@ -517,29 +531,18 @@ local yieldable_require; do
 		if main then
 			return require(name)
 		end
-		local filename = package.searchpath(name, package.path)
-		if not filename then
-			return require(name)
-		end
-		local modfunc = loadfile(filename)
-		if not modfunc then
-			return require(name)
-		end
+		local initfunc, extra = findloader(name)
 		if loading[name] then
 			error(("Another coroutine is loading `%s`."):format(name))
 		end
 		loading[name] = true
-		local ok, r = xpcall(modfunc, debug.traceback, name, filename)
+		local r = initfunc(name, extra)
 		loading[name] = nil
-		if ok then
-			if r == nil then
-				r = true
-			end
-			loaded[name] = r
-			return r
-		else
-			error(r)
+		if r == nil then
+			r = true
 		end
+		loaded[name] = r
+		return r
 	end
 end
 
