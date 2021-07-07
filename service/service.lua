@@ -276,7 +276,7 @@ local function resume_session(co, ...)
 		errobj = traceback(errobj, co)
 		if from == nil or from == 0 then
 			-- system message
-			print(errobj)
+			print(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
 		end
