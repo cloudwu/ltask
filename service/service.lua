@@ -67,6 +67,11 @@ local exclusive_service = false
 
 ----- error handling ------
 
+local error_mt = {}
+function error_mt:__tostring()
+	return table.concat(self, "\n")
+end
+
 local traceback; do
 	local selfsource <const> = debug.getinfo(1, "S").source
 	local function getshortsrc(source)
@@ -200,6 +205,7 @@ local traceback; do
 		assert(type(errobj) == "table")
 		errobj[#errobj+1] = ("\t( service:%d )"):format(ltask.self())
 		errobj[#errobj+1] = create_traceback(co, level or errobj.level)
+		setmetatable(errobj, error_mt)
 		return errobj
 	end
 end
@@ -209,6 +215,7 @@ local function rethrow_error(level, errobj)
 		error(errobj, level + 1)
 	else
 		errobj.level = level + 1
+		setmetatable(errobj, error_mt)
 		error(errobj)
 	end
 end
@@ -269,7 +276,7 @@ local function resume_session(co, ...)
 		errobj = traceback(errobj, co)
 		if from == nil or from == 0 then
 			-- system message
-			print(table.concat(errobj, "\n"))
+			print(errobj)
 		else
 			ltask.error(from, session, errobj)
 		end
@@ -554,7 +561,7 @@ do ------ request/select
 	local function pop_error(self)
 		local req = table.remove(self._error)
 		if req then
-			req.error = table.concat(traceback(req.error, 4), "\n")
+			req.error = tostring(traceback(req.error, 4))
 			return req
 		end
 	end
