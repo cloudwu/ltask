@@ -65,6 +65,161 @@ local session_waiting = {}
 local wakeup_queue = {}
 local exclusive_service = false
 
+----- error handling ------
+
+local error_mt = {}
+function error_mt:__tostring()
+	return table.concat(self, "\n")
+end
+
+local traceback; do
+	local selfsource <const> = debug.getinfo(1, "S").source
+	local function getshortsrc(source)
+		local maxlen <const> = 60
+		local type = source:byte(1)
+		if type == 61 --[['=']] then
+			if #source <= maxlen then
+				return source:sub(2)
+			else
+				return source:sub(2, maxlen)
+			end
+		elseif type == 64 --[['@']] then
+			if #source <= maxlen then
+				return source:sub(2)
+			else
+				return '...' .. source:sub(#source - maxlen + 5)
+			end
+		else
+			local nl = source:find '\n'
+			local maxlen <const> = maxlen - 15
+			if #source < maxlen and nl == nil then
+				return ('[string "%s"]'):format(source)
+			else
+				local n = #source
+				if nl ~= nil then
+					n = nl - 1
+				end
+				if n > maxlen then
+					n = maxlen
+				end
+				return ('[string "%s..."]'):format(source:sub(1, n))
+			end
+		end
+	end
+	local function findfield(t, f, level)
+		if level == 0 or type(t) ~= 'table' then
+			return
+		end
+		for key, value in pairs(t) do
+			if type(key) == 'string' and not (level == 2 and key == '_G') then
+				if value == f then
+					return key
+				end
+				local res = findfield(value, f, level - 1)
+				if res then
+					return key .. '.' .. res
+				end
+			end
+		end
+	end
+	local function pushglobalfuncname(f)
+		return findfield(_G, f, 2)
+	end
+	local function pushfuncname(info)
+		local funcname = pushglobalfuncname(info.func)
+		if funcname then
+			return ("function '%s'"):format(funcname)
+		elseif info.namewhat ~= '' then
+			return ("%s '%s'"):format(info.namewhat, info.name)
+		elseif info.what == 'main' then
+			return 'main chunk'
+		elseif info.what ~= 'C' then
+			return ('function <%s:%d>'):format(getshortsrc(info.source), info.linedefined)
+		else
+			return '?'
+		end
+	end
+	local function create_traceback(co, level)
+		local s = {}
+		local depth = level or 0
+		while true do
+			local info = debug.getinfo(co, depth, "Slntf")
+			if not info then
+				s[#s] = nil
+				break
+			end
+			if #s > 0 and selfsource == info.source then
+				goto continue
+			end
+			s[#s + 1] = ('\t%s:'):format(getshortsrc(info.source))
+			if info.currentline > 0 then
+				s[#s + 1] = ('%d:'):format(info.currentline)
+			end
+			s[#s + 1] = " in "
+			s[#s + 1] = pushfuncname(info)
+			if info.istailcall then
+				s[#s + 1] = '\n\t(...tail calls...)'
+			end
+			s[#s + 1] = "\n"
+			::continue::
+			depth = depth + 1
+		end
+		return table.concat(s)
+	end
+	local function replacewhere(co, message, level)
+		local f, l = message:find ':[-%d]+: '
+		if f and l then
+			local where_path = message:sub(1, f - 1)
+			local where_line = tonumber(message:sub(f + 1, l - 2))
+			local where_src = "@"..where_path
+			message = message:sub(l + 1)
+			local depth = level or 0
+			while true do
+				local info = debug.getinfo(co, depth, "Sl")
+				if not info then
+					break
+				end
+				if info.what ~= 'C' and info.source == where_src and where_line == info.currentline then
+					return message, depth
+				end
+				depth = depth + 1
+			end
+		end
+		return message, level
+	end
+	function traceback(errobj, co)
+		local level
+		if type(co) ~= "thread" then
+			level = co
+			co = running_thread
+		end
+		if type(errobj) == "string" then
+			local message
+			message, level = replacewhere(co, errobj, level)
+			errobj = {
+				message,
+				"stack traceback:",
+				level = level,
+			}
+		end
+		assert(type(errobj) == "table")
+		errobj[#errobj+1] = ("\t( service:%d )"):format(ltask.self())
+		errobj[#errobj+1] = create_traceback(co, level or errobj.level)
+		setmetatable(errobj, error_mt)
+		return errobj
+	end
+end
+
+local function rethrow_error(level, errobj)
+	if type(errobj) == "string" then
+		error(errobj, level + 1)
+	else
+		errobj.level = level + 1
+		setmetatable(errobj, error_mt)
+		error(errobj)
+	end
+end
+
 local function report_error(addr, session, errobj)
 	ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, ltask.pack("report_error", addr, session, errobj))
 	continue_session()
@@ -106,10 +261,10 @@ end
 
 local function resume_session(co, ...)
 	running_thread = co
-	local ok, msg = coroutine.resume(co, ...)
+	local ok, errobj = coroutine.resume(co, ...)
 	running_thread = nil
 	if ok then
-		return msg
+		return errobj
 	else
 		local from = session_coroutine_address[co]
 		local session = session_coroutine_response[co]
@@ -118,12 +273,12 @@ local function resume_session(co, ...)
 		session_coroutine_address[co] = nil
 		session_coroutine_response[co] = nil
 
+		errobj = traceback(errobj, co)
 		if from == nil or from == 0 then
 			-- system message
-			print(debug.traceback(co, msg))
+			print(errobj)
 		else
-			print(debug.traceback(co, msg))
-			ltask.error(from, session, msg)
+			ltask.error(from, session, errobj)
 		end
 	end
 end
@@ -189,7 +344,7 @@ function ltask.call(address, ...)
 		return ltask.unpack_remove(msg, sz)
 	else
 		-- type == MESSAGE_ERROR
-		error(ltask.unpack_remove(msg, sz))
+		rethrow_error(2, ltask.unpack_remove(msg, sz))
 	end
 end
 
@@ -229,7 +384,7 @@ function ltask.syscall(address, ...)
 		return ltask.unpack_remove(msg, sz)
 	else
 		-- type == MESSAGE_ERROR
-		error(ltask.unpack_remove(msg, sz))
+		rethrow_error(2, ltask.unpack_remove(msg, sz))
 	end
 end
 
@@ -256,7 +411,7 @@ function ltask.timeout(ti, func)
 end
 
 local function wait_interrupt(errobj)
-	error(errobj)
+	rethrow_error(3, errobj)
 end
 
 local function wait_response(type, ...)
@@ -287,6 +442,7 @@ end
 function ltask.interrupt(token, errobj)
 	local co = session_waiting[token]
 	if co then
+		errobj = traceback(errobj, 4)
 		wakeup_queue[#wakeup_queue+1] = {co, MESSAGE_ERROR, errobj}
 		session_waiting[token] = nil
 		return true
@@ -345,7 +501,7 @@ do ------ request/select
 				else
 					self._request = self._request - 1
 					local req = self._sessions[session]
-					req.error = (ltask.unpack_remove(msg, sz))	-- todo : multiple error objects
+					req.error = (ltask.unpack_remove(msg, sz))
 					local err = self._error
 					if not err then
 						err = {}
@@ -402,11 +558,19 @@ do ------ request/select
 		end
 	end
 
+	local function pop_error(self)
+		local req = table.remove(self._error)
+		if req then
+			req.error = tostring(traceback(req.error, 4))
+			return req
+		end
+	end
+
 	local function request_iter(self)
 		local timeout_session = self._timeout
 		return function()
 			if self._error and #self._error > 0 then
-				return table.remove(self._error)
+				return pop_error(self)
 			end
 
 			local session, resp = next(self._resp)
@@ -423,7 +587,7 @@ do ------ request/select
 				end
 				session, resp = next(self._resp)
 				if session == nil then
-					return table.remove(self._error)
+					return pop_error(self)
 				end
 			end
 

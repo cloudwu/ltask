@@ -39,7 +39,8 @@ do
 	-- root init response to itself
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
-			ltask.log("Root init error:", ltask.unpack_remove(msg, sz))
+			local errobj = ltask.unpack_remove(msg, sz)
+			ltask.log("Root init error:", table.concat(errobj, "\n"))
 			writelog()
 			ltask.quit()
 		end
