@@ -192,22 +192,26 @@ local function del_service(address)
 	end
 end
 
+local function quit()
+	if next(anonymous_services) ~= nil then
+		return
+	end
+	ltask.signal_handler(del_service)
+	for i = #named_services, 1, -1 do
+		local name = named_services[i]
+		local address = named_services[name]
+		local ok, err = pcall(ltask.syscall, address, "quit")
+		if not ok then
+			print(string.format("named service %s(%d) quit error: %s.", name, address, err))
+		end
+	end
+	writelog()
+	ltask.quit()
+end
+
 local function signal_handler(from)
 	del_service(from)
-	if next(anonymous_services) == nil then
-		ltask.signal_handler(del_service)
-
-		for i = #named_services, 1, -1 do
-			local name = named_services[i]
-			local address = named_services[name]
-			local ok, err = pcall(ltask.syscall, address, "quit")
-			if not ok then
-				print(string.format("named service %s(%d) quit error: %s.", name, address, err))
-			end
-		end
-		writelog()
-		ltask.quit()
-	end
+	quit()
 end
 
 ltask.signal_handler(signal_handler)
@@ -237,7 +241,8 @@ local function boot()
 	end
 	for req, resp in request:select() do
 		if not resp then
-			error(string.format("exclusive %d init error: %s.", req[1], req.error))
+			print(string.format("exclusive %d init error: %s", req[1], req.error))
+			return
 		end
 	end
 	S.uniqueservice(table.unpack(config.logger))
@@ -247,3 +252,4 @@ end
 ltask.dispatch(S)
 
 boot()
+quit()
