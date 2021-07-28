@@ -74,8 +74,8 @@ logqueue_push(struct logqueue *q, struct logmessage *m) {
 		item->next = NULL;
 		q->tail = item;
 	}
-	spinlock_release(&q->lock);
 	item->msg = *m;
+	spinlock_release(&q->lock);
 	return 0;
 }
 
@@ -93,7 +93,7 @@ logqueue_pop(struct logqueue *q, struct logmessage *m) {
 	}
 	ret->next = q->freelist;
 	q->freelist = ret;
-	spinlock_release(&q->lock);
 	*m = ret->msg;
+	spinlock_release(&q->lock);
 	return 0;
 }
