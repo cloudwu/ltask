@@ -93,6 +93,7 @@ init_service(lua_State *L) {
 	lua_pushlstring(L, (const char *)ud, sz);
 	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
 	luaL_openlibs(L);
+	lua_gc(L, LUA_GCGEN, 0, 0);
 	return 0;
 }
 
