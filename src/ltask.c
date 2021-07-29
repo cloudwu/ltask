@@ -1182,6 +1182,39 @@ ltask_poplog(lua_State *L) {
 	return 4;
 }
 
+static int
+ltask_memlimit(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	size_t limit = luaL_checkinteger(L, 1);
+	size_t last_limit = service_memlimit(S->task->services, S->id, limit);
+	lua_pushinteger(L, last_limit);
+	return 1;
+}
+
+static int
+ltask_memcount(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	static int type[] = {
+		LUA_TSTRING,
+		LUA_TTABLE,
+		LUA_TFUNCTION,
+		LUA_TUSERDATA,
+		LUA_TTHREAD,
+	};
+	const int ntype = sizeof(type)/sizeof(type[0]);
+	if (!lua_istable(L, 1)) {
+		lua_settop(L, 0);
+		lua_createtable(L, 0, ntype);
+	}
+	int i;
+	for (i=0;i<ntype;i++) {
+		size_t c = service_memcount(S->task->services, S->id, type[i]);
+		lua_pushinteger(L, c);
+		lua_setfield(L, 1, lua_typename(L, type[i]));
+	}
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1198,6 +1231,8 @@ luaopen_ltask(lua_State *L) {
 		{ "now", ltask_now },
 		{ "pushlog", ltask_pushlog },
 		{ "poplog", ltask_poplog },
+		{ "mem_limit", ltask_memlimit },
+		{ "mem_count", ltask_memcount },
 		{ NULL, NULL },
 	};
 

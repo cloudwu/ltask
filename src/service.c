@@ -10,9 +10,36 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 // test whether an unsigned value is a power of 2 (or zero)
 #define ispow2(x)	(((x) & ((x) - 1)) == 0)
+
+#define TYPEID_STRING 0
+#define TYPEID_TABLE 1
+#define TYPEID_FUNCTION 2
+#define TYPEID_USERDATA 3
+#define TYPEID_THREAD 4
+#define TYPEID_COUNT 5
+
+static int
+lua_typeid[LUA_NUMTYPES] = {
+	TYPEID_COUNT,	// LUA_TNIL
+	TYPEID_COUNT,	// LUA_TBOOLEAN
+	TYPEID_COUNT,	// LUA_TLIGHTUSERDATA
+	TYPEID_COUNT,	// LUA_TNUMBER
+	TYPEID_STRING,
+	TYPEID_TABLE,
+	TYPEID_FUNCTION,
+	TYPEID_USERDATA,
+	TYPEID_THREAD,
+};
+
+struct memory_stat {
+	size_t count[TYPEID_COUNT];
+	size_t mem;
+	size_t limit;
+};
 
 struct service {
 	lua_State *L;
@@ -23,6 +50,7 @@ struct service {
 	int receipt;
 	int thread_id;
 	service_id id;
+	struct memory_stat stat;
 };
 
 struct service_pool {
@@ -146,11 +174,54 @@ get_service(struct service_pool *p, service_id id) {
 	return S;
 }
 
+static inline int
+check_limit(struct memory_stat *stat) {
+	if (stat->limit == 0)
+		return 0;
+	return (stat->mem > stat->limit);
+}
+
+static void *
+service_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
+	struct memory_stat *stat = (struct memory_stat *)ud;
+	if (nsize == 0) {
+		stat->mem -= osize;
+		free(ptr);
+		return NULL;
+	} else if (ptr == NULL) {
+		// new object
+		if (check_limit(stat)) {
+			return NULL;
+		}
+		int id = lua_typeid[osize];
+		if (id < TYPEID_COUNT) {
+			stat->count[id]++;
+		}
+		void * ret = malloc(nsize);
+		if (ret == NULL) {
+			return NULL;
+		}
+		stat->mem += nsize;
+		return ret;
+	} else {
+		if (osize > nsize && check_limit(stat)) {
+			return NULL;
+		}
+		void * ret = realloc(ptr, nsize);
+		if (ret == NULL)
+			return NULL;
+		stat->mem += nsize;
+		stat->mem -= osize;
+		return ret;
+	}
+}
+
 int
 service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
-	lua_State *L = luaL_newstate();
+	memset(&S->stat, 0, sizeof(S->stat));
+	lua_State *L = lua_newstate(service_alloc, &S->stat);
 	if (L == NULL)
 		return 1;
 	lua_pushcfunction(L, init_service);
@@ -167,6 +238,25 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	}
 	S->L = L;
 	return 0;
+}
+
+size_t
+service_memlimit(struct service_pool *p, service_id id, size_t limit) {
+	struct service *S = get_service(p, id);
+	if (S == NULL || S->L == NULL)
+		return (size_t)-1;
+	size_t ret = S->stat.limit;
+	S->stat.limit = limit;
+	return ret;
+}
+
+size_t
+service_memcount(struct service_pool *p, service_id id, int luatype) {
+	struct service *S = get_service(p, id);
+	int type = lua_typeid[luatype];
+	if (S == NULL || S->L == NULL || type == TYPEID_COUNT)
+		return (size_t)-1;
+	return S->stat.count[type];
 }
 
 static int
@@ -234,7 +324,7 @@ service_sets(struct service_pool *p, service_id id, const char *key, const char 
 	lua_State *L = S->L;
 	lua_pushcfunction(L, sets);
 	lua_pushlightuserdata(L, (void *)key);
-	lua_pushlightuserdata(L, value);
+	lua_pushlightuserdata(L, (void *)value);
 	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
 		lua_pop(L, 1);
 		return 1;

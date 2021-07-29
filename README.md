@@ -40,3 +40,9 @@ end
 
 boot()
 ```
+
+Test
+====
+```
+lua main.lua examples/timer/config
+```

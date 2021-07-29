@@ -53,5 +53,7 @@ int service_send_message(struct service_pool *p, service_id id, struct message *
 struct message * service_message_out(struct service_pool *p, service_id id);
 void service_write_receipt(struct service_pool *p, service_id id, int receipt, struct message *bounce);
 struct message * service_read_receipt(struct service_pool *p, service_id id, int *receipt);
+size_t service_memlimit(struct service_pool *p, service_id id, size_t limit);
+size_t service_memcount(struct service_pool *p, service_id id, int luatype);
 
 #endif
