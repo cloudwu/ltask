@@ -425,7 +425,6 @@ end
 function ltask.wait(token)
 	token = token or running_thread
 	session_waiting[token] = running_thread
-	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
 	return wait_response(yield_session())
 end
