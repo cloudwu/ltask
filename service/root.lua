@@ -134,6 +134,9 @@ function S.kill(address)
 end
 
 function S.label(address)
+	if address == nil then
+		return labels
+	end
 	return labels[address]
 end
 

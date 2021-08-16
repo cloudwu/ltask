@@ -786,6 +786,10 @@ function sys_service.quit()
 	end
 end
 
+function sys_service.memory()
+	return collectgarbage "count" * 1024
+end
+
 local function system(command, ...)
 	local s = sys_service[command]
 	if not s then
