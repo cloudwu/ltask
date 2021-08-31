@@ -216,8 +216,33 @@ service_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 	}
 }
 
+static int
+pushstring(lua_State *L) {
+	const char * msg = (const char *)lua_touserdata(L, 1);
+	lua_settop(L, 1);
+	lua_pushstring(L, msg);
+	return 1;
+}
+
+static void
+error_message(lua_State *fromL, lua_State *toL, const char *msg) {
+	if (toL == NULL)
+		return;
+	if (fromL == NULL) {
+		lua_pushlightuserdata(toL, (void *)msg);
+	} else {
+		const char * err = lua_tostring(fromL, -1);
+		lua_pushcfunction(toL, pushstring);
+		lua_pushlightuserdata(toL, (void *)err);
+		if (lua_pcall(toL, 1, 1, 0) != LUA_OK) {
+			lua_pop(toL, 1);
+			lua_pushlightuserdata(toL, (void *)msg);
+		}
+	}
+}
+
 int
-service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
+service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
 	memset(&S->stat, 0, sizeof(S->stat));
@@ -228,11 +253,13 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz) {
 	lua_pushlightuserdata(L, ud);
 	lua_pushinteger(L, sz);
 	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		error_message(L, pL, "Init lua state error");
 		lua_close(L);
 		return 1;
 	}
 	S->msg = queue_new_ptr(p->queue_length);
 	if (S->msg == NULL) {
+		error_message(NULL, pL, "New queue error");
 		lua_close(L);
 		return 1;
 	}
@@ -268,15 +295,18 @@ require_cmodule(lua_State *L) {
 }
 
 int
-service_requiref(struct service_pool *p, service_id id, const char *name, void *f) {
+service_requiref(struct service_pool *p, service_id id, const char *name, void *f, void *pL) {
 	struct service *S = get_service(p, id);
-	if (S == NULL || S->L == NULL)
+	if (S == NULL || S->L == NULL) {
+		error_message(NULL, pL, "requiref : No service");
 		return 1;
+	}
 	lua_State *L = S->L;
 	lua_pushcfunction(L, require_cmodule);
 	lua_pushlightuserdata(L, (void *)name);
 	lua_pushlightuserdata(L, f);
 	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		error_message(L, pL, "requiref : pcall error");
 		lua_pop(L, 1);
 		return 1;
 	}

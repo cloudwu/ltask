@@ -617,6 +617,18 @@ exclusive_count(struct ltask *task) {
 	return i;
 }
 
+static const char *
+get_error_message(lua_State *L) {
+	switch (lua_type(L, -1)) {
+	case LUA_TLIGHTUSERDATA:
+		return (const char *)lua_touserdata(L, -1);
+	case LUA_TSTRING:
+		return lua_tostring(L, 1);
+	default:
+		return "Invalid error message";
+	}
+}
+
 static int
 ltask_exclusive(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
@@ -632,8 +644,8 @@ ltask_exclusive(lua_State *L) {
 	if (service_setp(task->services, e->service, "EXCLUSIVE_HANDLE", e)) {
 		return luaL_error(L, "set EXCLUSIVE_HANDLE fail");
 	}
-	if (service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive)) {
-		return luaL_error(L, "require ltask.exclusive fail");
+	if (service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive, L)) {
+		return luaL_error(L, "require ltask.exclusive fail : %s", get_error_message(L));
 	}
 	service_status_set(task->services, e->service, SERVICE_STATUS_EXCLUSIVE);
 	e->task = task;
@@ -747,9 +759,9 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 	ud.task = task;
 	ud.id = id;
 	struct service_pool *S = task->services;
-	if (service_init(S, id, (void *)&ud, sizeof(ud)) || service_requiref(S, id, "ltask", luaopen_ltask)) {
+	if (service_init(S, id, (void *)&ud, sizeof(ud), L) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
 		service_delete(S, id);
-		luaL_error(L, "New services faild");
+		luaL_error(L, "New service fail : %s", get_error_message(L));
 		return;
 	}
 	if (service_sets(task->services, id, "SERVICE_LABEL", label)) {
@@ -843,8 +855,8 @@ ltask_init_root(lua_State *L) {
 	if (id.id != SERVICE_ID_ROOT) {
 		return luaL_error(L, "Id should be ROOT(1)");
 	}
-	if (service_requiref(task->services, id, "ltask.root", luaopen_ltask_root)) {
-		return luaL_error(L, "require ltask.root fail");
+	if (service_requiref(task->services, id, "ltask.root", luaopen_ltask_root, L)) {
+		return luaL_error(L, "require ltask.root fail : %s", get_error_message(L));
 	}
 	return 0;
 }
