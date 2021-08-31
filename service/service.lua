@@ -280,6 +280,7 @@ local function resume_session(co, ...)
 		else
 			ltask.error(from, session, errobj)
 		end
+		coroutine.close(co)
 	end
 end
 
@@ -683,24 +684,51 @@ local yieldable_require; do
 				msg = msg .. "\n\t" .. f
 			end
 		end
-		error(("module '%s' not found:%s"):format(name, msg))
+		error(("module '%s' not found:%s"):format(name, msg), 3)
+	end
+	local function finish_loading(loading_queue)
+		local waiting = #loading_queue
+		if waiting > 0 then
+			for i = 1, waiting do
+				ltask.wakeup(loading_queue[i])
+			end
+		end
+		loading[loading_queue.name] = nil
+	end
+	local toclosed_loading = {__close = finish_loading}
+	local function start_loading(name, co)
+		local loading_queue = loading[name]
+		if loading_queue then
+			if loading_queue.co == co then
+				error("circular dependency", 2)
+			end
+			loading_queue[#loading_queue+1] = co
+			ltask.wait(co)
+			return
+		end
+		loading_queue = setmetatable({co = co, name = name}, toclosed_loading)
+		loading[name] = loading_queue
+		return loading_queue
 	end
 	function yieldable_require(name)
 		local m = loaded[name]
 		if m ~= nil then
 			return m
 		end
-		local _, main = coroutine.running()
+		local co, main = coroutine.running()
 		if main then
 			return require(name)
 		end
-		local initfunc, extra = findloader(name)
-		if loading[name] then
-			error(("Another coroutine is loading `%s`."):format(name))
+		local queue <close> = start_loading(name, co)
+		if not queue then
+			local r = loaded[name]
+			if r == nil then
+				error(("require %q failed"):format(name), 2)
+			end
+			return r
 		end
-		loading[name] = true
+		local initfunc, extra = findloader(name)
 		local r = initfunc(name, extra)
-		loading[name] = nil
 		if r == nil then
 			r = true
 		end
@@ -763,7 +791,6 @@ function sys_service.init(t)
 	if t.lua_cpath then
 		package.cpath = t.lua_cpath
 	end
-	local _require = _G.require
 	local filename = assert(package.searchpath(t.name, t.service_path))
 	local f = assert(loadfile(filename))
 	_G.require = yieldable_require
@@ -771,7 +798,6 @@ function sys_service.init(t)
 		init_exclusive()
 	end
 	local r = f(table.unpack(t.args))
-	_G.require = _require
 	if service == nil then
 		service = r
 	end
