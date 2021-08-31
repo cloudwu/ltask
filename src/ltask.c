@@ -1022,6 +1022,10 @@ static int
 lsend_message(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	struct message *msg = gen_send_message(L, S->id);
+	if (!lua_isyieldable(L)) {
+		message_delete(msg);
+		return luaL_error(L, "Can't send message in none-yieldable context");
+	}
 	if (service_send_message(S->task->services, S->id, msg)) {
 		// error
 		message_delete(msg);
