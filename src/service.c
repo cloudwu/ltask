@@ -20,14 +20,15 @@
 #define TYPEID_FUNCTION 2
 #define TYPEID_USERDATA 3
 #define TYPEID_THREAD 4
-#define TYPEID_COUNT 5
+#define TYPEID_NONEOBJECT 5
+#define TYPEID_COUNT 6
 
 static int
 lua_typeid[LUA_NUMTYPES] = {
-	TYPEID_COUNT,	// LUA_TNIL
-	TYPEID_COUNT,	// LUA_TBOOLEAN
-	TYPEID_COUNT,	// LUA_TLIGHTUSERDATA
-	TYPEID_COUNT,	// LUA_TNUMBER
+	TYPEID_NONEOBJECT,	// LUA_TNIL
+	TYPEID_NONEOBJECT,	// LUA_TBOOLEAN
+	TYPEID_NONEOBJECT,	// LUA_TLIGHTUSERDATA
+	TYPEID_NONEOBJECT,	// LUA_TNUMBER
 	TYPEID_STRING,
 	TYPEID_TABLE,
 	TYPEID_FUNCTION,
@@ -195,9 +196,7 @@ service_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 		}
 		if (osize >=0 && osize < LUA_NUMTYPES) {
 			int id = lua_typeid[osize];
-			if (id < TYPEID_COUNT) {
-				stat->count[id]++;
-			}
+			stat->count[id]++;
 		}
 		void * ret = malloc(nsize);
 		if (ret == NULL) {
@@ -282,9 +281,10 @@ service_memlimit(struct service_pool *p, service_id id, size_t limit) {
 size_t
 service_memcount(struct service_pool *p, service_id id, int luatype) {
 	struct service *S = get_service(p, id);
-	int type = lua_typeid[luatype];
-	if (S == NULL || S->L == NULL || type == TYPEID_COUNT)
+	assert(luatype >=0 && luatype < LUA_NUMTYPES);
+	if (S == NULL || S->L == NULL)
 		return (size_t)-1;
+	int type = lua_typeid[luatype];
 	return S->stat.count[type];
 }
 
