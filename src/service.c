@@ -193,9 +193,11 @@ service_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 		if (check_limit(stat)) {
 			return NULL;
 		}
-		int id = lua_typeid[osize];
-		if (id < TYPEID_COUNT) {
-			stat->count[id]++;
+		if (osize >=0 && osize < LUA_NUMTYPES) {
+			int id = lua_typeid[osize];
+			if (id < TYPEID_COUNT) {
+				stat->count[id]++;
+			}
 		}
 		void * ret = malloc(nsize);
 		if (ret == NULL) {
