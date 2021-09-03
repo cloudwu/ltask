@@ -188,6 +188,21 @@ local traceback; do
 		return message, level
 	end
 	function traceback(errobj, co)
+		if co == nil then
+			if type(errobj) == "string" then
+				local message, level = replacewhere(co, errobj)
+				errobj = {
+					message,
+					"stack traceback:",
+					("\t( service:%d )"):format(ltask.self()),
+					create_traceback(co, level),
+					level = level,
+				}
+			end
+			assert(type(errobj) == "table")
+			setmetatable(errobj, error_mt)
+			return errobj
+		end
 		local level
 		if type(co) ~= "thread" then
 			level = co
@@ -353,7 +368,13 @@ local ignore_response ; do
 	local function no_response_()
 		while true do
 			local type, session, msg, sz = yield_session()
-			ltask.remove(msg, sz)
+			if type == MESSAGE_ERROR then
+				local errobj = ltask.unpack_remove(msg, sz)
+				errobj = traceback(errobj)
+				print(tostring(errobj))
+			else
+				ltask.remove(msg, sz)
+			end
 		end
 	end
 
