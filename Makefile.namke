@@ -1,0 +1,88 @@
+LUA_SRC_DIR=.\3rd\lua
+OBJ_DIR=build
+CFLAGS=/nologo /MT /O2 /c
+
+LUAINC=/I $(LUA_SRC_DIR)
+LUALIB=lua.lib
+
+LUA_OBJS=\
+$(OBJ_DIR)\lapi.obj \
+$(OBJ_DIR)\lauxlib.obj \
+$(OBJ_DIR)\lbaselib.obj \
+$(OBJ_DIR)\lcode.obj \
+$(OBJ_DIR)\lcorolib.obj \
+$(OBJ_DIR)\lctype.obj \
+$(OBJ_DIR)\ldblib.obj \
+$(OBJ_DIR)\ldebug.obj \
+$(OBJ_DIR)\ldo.obj \
+$(OBJ_DIR)\ldump.obj \
+$(OBJ_DIR)\lfunc.obj \
+$(OBJ_DIR)\lgc.obj \
+$(OBJ_DIR)\linit.obj \
+$(OBJ_DIR)\liolib.obj \
+$(OBJ_DIR)\llex.obj \
+$(OBJ_DIR)\lmathlib.obj \
+$(OBJ_DIR)\lmem.obj \
+$(OBJ_DIR)\loadlib.obj \
+$(OBJ_DIR)\lobject.obj \
+$(OBJ_DIR)\lopcodes.obj \
+$(OBJ_DIR)\loslib.obj \
+$(OBJ_DIR)\lparser.obj \
+$(OBJ_DIR)\lstate.obj \
+$(OBJ_DIR)\lstring.obj \
+$(OBJ_DIR)\lstrlib.obj \
+$(OBJ_DIR)\ltable.obj \
+$(OBJ_DIR)\ltablib.obj \
+$(OBJ_DIR)\ltests.obj \
+$(OBJ_DIR)\ltm.obj \
+$(OBJ_DIR)\lundump.obj \
+$(OBJ_DIR)\lutf8lib.obj \
+$(OBJ_DIR)\lvm.obj \
+$(OBJ_DIR)\lzio.obj
+
+all: lua.exe ltask.dll
+
+{$(LUA_SRC_DIR)}.c{$(OBJ_DIR)}.obj:
+    @if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+    $(CC) $(CFLAGS) /D LUA_BUILD_AS_DLL $(LUAINC) /Fo$@ $<
+
+$(OBJ_DIR)\lua.obj: $(LUA_SRC_DIR)\lua.c
+    @if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+    $(CC) $(CFLAGS) $(LUAINC) /Fo$@ $?
+
+lua.exe: $(LUA_OBJS) $(OBJ_DIR)\lua.obj
+    LINK /nologo /OUT:$@ $?
+    del *.exp
+
+OJBS=\
+ $(OBJ_DIR)\ltask.obj \
+ $(OBJ_DIR)\queue.obj \
+ $(OBJ_DIR)\sysinfo.obj \
+ $(OBJ_DIR)\service.obj \
+ $(OBJ_DIR)\config.obj \
+ $(OBJ_DIR)\lua-seri.obj \
+ $(OBJ_DIR)\message.obj \
+ $(OBJ_DIR)\systime.obj \
+ $(OBJ_DIR)\timer.obj \
+ $(OBJ_DIR)\sysapi.obj \
+ $(OBJ_DIR)\logqueue.obj \
+ $(OBJ_DIR)\debuglog.obj
+
+{src}.c{$(OBJ_DIR)}.obj:
+    @if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+    $(CC) $(CFLAGS) /D LUA_BUILD_AS_DLL $(LUAINC) /Fo$@ $<
+
+LDFLAGS= /NOLOGO /DLL /INCREMENTAL:NO \
+	/SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /DYNAMICBASE:NO \
+    /MACHINE:X86 $(LUALIB) winmm.lib
+
+ltask.dll : $(OJBS)
+    LINK $(LDFLAGS) /OUT:$@ $?
+    del *.exp
+    del *.lib
+
+clean:
+    rd /S /Q $(OBJ_DIR)
+    del *.exe
+    del *.exp
+    del *.lib
