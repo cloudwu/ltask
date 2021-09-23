@@ -17,6 +17,12 @@ local SELECT_PROTO = {
 
 local ltask = require "ltask"
 
+function ltask.log(...)
+	ltask.pushlog(ltask.pack(...))
+end
+
+ltask.log(string.format("${startup:%s}", debug.getregistry().SERVICE_LABEL))
+
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
 local function continue_session()
@@ -48,7 +54,7 @@ end
 function ltask.post_message(to, ...)
 	local r = post_message_(to, ...)
 	if r == nil then
-		error(string.format("%x is busy", to))
+		error(string.format("${service:%d} is busy", to))
 	end
 	return r
 end
@@ -144,7 +150,8 @@ local traceback, create_traceback; do
 		local s = {}
 		local depth = level or 0
 		while true do
-			local info = debug.getinfo(co, depth, "Slntf")
+			local info = co and debug.getinfo(co, depth, "Slntf")
+							or debug.getinfo(depth, "Slntf")
 			if not info then
 				s[#s] = nil
 				break
@@ -262,12 +269,7 @@ end
 
 function ltask.error(addr, session, errobj)
 	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
-	if running_thread == nil then
-		-- main thread
-		yield_service()
-	else
-		continue_session()
-	end
+	continue_session()
 	local type, msg, sz = ltask.message_receipt()
 	if type ~= RECEIPT_DONE then
 		ltask.remove(msg, sz)
@@ -327,13 +329,14 @@ local SESSION = {}
 local function send_response(...)
 	local from = session_coroutine_address[running_thread]
 	local session = session_coroutine_response[running_thread]
-	-- End session
-	session_coroutine_address[running_thread] = nil
-	session_coroutine_response[running_thread] = nil
 
 	if session and session > 0 then
 		ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
 	end
+
+	-- End session
+	session_coroutine_address[running_thread] = nil
+	session_coroutine_response[running_thread] = nil
 end
 
 ------------- ltask lua api
@@ -478,10 +481,6 @@ end
 
 function ltask.no_response()
 	session_coroutine_response[running_thread] = nil
-end
-
-function ltask.log(...)
-	ltask.pushlog(ltask.pack(...))
 end
 
 function ltask.spawn(name, ...)
@@ -906,3 +905,5 @@ while true do
 	end
 	yield_service()
 end
+
+ltask.log "${quit}"

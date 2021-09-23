@@ -435,7 +435,7 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	int nresults = 0;
 	int r = lua_resume(L, NULL, 0, &nresults);
 	if (r == LUA_YIELD) {
-		assert(nresults == 0);
+		lua_pop(L, nresults);
 		return 0;
 	}
 	if (r == LUA_OK) {

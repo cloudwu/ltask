@@ -13,10 +13,6 @@ local S = {}
 
 local anonymous_services = {}
 local named_services = {}
-local labels = {
-	[0] = "system",
-	[1] = "root",
-}
 
 local function writelog()
 	while true do
@@ -31,7 +27,7 @@ local function writelog()
 		for i = 1, t.n do
 			str[#str+1] = tostring(t[i])
 		end
-		io.write(string.format("[%s.%02d : %-10s]\t%s\n", os.date("%c", tsec), msec, labels[id], table.concat(str, "\t")))
+		io.write(string.format("[%s.%02d : %d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
 	end
 end
 
@@ -95,7 +91,6 @@ end
 local function new_service(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
 	anonymous_services[address] = true
-	labels[address] = name
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
 		S.kill(address)
@@ -133,13 +128,6 @@ function S.kill(address)
 	return false
 end
 
-function S.label(address)
-	if address == nil then
-		return labels
-	end
-	return labels[address]
-end
-
 function S.register(name)
 	local session = ltask.current_session()
 	register_service(session.from, name)
@@ -174,7 +162,6 @@ function S.uniqueservice(name, ...)
 end
 
 local function del_service(address)
-	labels[address] = nil
 	if anonymous_services[address] then
 		anonymous_services[address] = nil
 	else
@@ -231,7 +218,6 @@ local function boot()
 			args = {}
 		end
 		local id = i + 1
-		labels[id] = name
 		register_service(id, name)
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
