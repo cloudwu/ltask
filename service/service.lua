@@ -56,6 +56,7 @@ end
 local running_thread
 
 local session_coroutine_suspend_lookup = {}
+local session_coroutine_where = {}
 local session_coroutine_suspend = {}
 local session_coroutine_response = {}
 local session_coroutine_address = {}
@@ -72,7 +73,7 @@ function error_mt:__tostring()
 	return table.concat(self, "\n")
 end
 
-local traceback; do
+local traceback, create_traceback; do
 	local selfsource <const> = debug.getinfo(1, "S").source
 	local function getshortsrc(source)
 		local maxlen <const> = 60
@@ -139,7 +140,7 @@ local traceback; do
 			return '?'
 		end
 	end
-	local function create_traceback(co, level)
+	function create_traceback(co, level)
 		local s = {}
 		local depth = level or 0
 		while true do
@@ -187,26 +188,30 @@ local traceback; do
 		end
 		return message, level
 	end
-	function traceback(errobj, co)
-		if co == nil then
+	function traceback(errobj, where)
+		if type(where) == "string" then
 			if type(errobj) == "string" then
-				local message, level = replacewhere(co, errobj)
+				local message, level = replacewhere(nil, errobj)
 				errobj = {
 					message,
 					"stack traceback:",
 					("\t( service:%d )"):format(ltask.self()),
-					create_traceback(co, level),
+					where,
 					level = level,
 				}
 			end
 			assert(type(errobj) == "table")
+			errobj[#errobj+1] = ("\t( service:%d )"):format(ltask.self())
+			errobj[#errobj+1] = where
 			setmetatable(errobj, error_mt)
 			return errobj
 		end
-		local level
-		if type(co) ~= "thread" then
-			level = co
+		local co, level
+		if type(where) == "thread" then
+			co = where
+		else
 			co = running_thread
+			level = where
 		end
 		if type(errobj) == "string" then
 			local message
@@ -331,18 +336,6 @@ local function send_response(...)
 	end
 end
 
-local function send_error(errobj)
-	local from = session_coroutine_address[running_thread]
-	local session = session_coroutine_response[running_thread]
-	-- End session
-	session_coroutine_address[running_thread] = nil
-	session_coroutine_response[running_thread] = nil
-
-	if session and session > 0 then
-		ltask.error(from, session, errobj)
-	end
-end
-
 ------------- ltask lua api
 
 function ltask.suspend(session, co)
@@ -370,18 +363,20 @@ local ignore_response ; do
 			local type, session, msg, sz = yield_session()
 			if type == MESSAGE_ERROR then
 				local errobj = ltask.unpack_remove(msg, sz)
-				errobj = traceback(errobj)
+				errobj = traceback(errobj, session_coroutine_where[session] or "")
 				print(tostring(errobj))
 			else
 				ltask.remove(msg, sz)
 			end
+			session_coroutine_where[session] = nil
 		end
 	end
 
 	local no_response_handler = coroutine.create(no_response_)
 	coroutine.resume(no_response_handler)
 
-	function ignore_response(session_id)
+	function ignore_response(session_id, where)
+		session_coroutine_where[session_id] = where
 		session_coroutine_suspend_lookup[session_id] = no_response_handler
 	end
 end
@@ -389,7 +384,7 @@ end
 function ltask.send(address, ...)
 	local r = ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
 	if r then
-		ignore_response(session_id)
+		ignore_response(session_id, create_traceback(running_thread, 3))
 		session_id = session_id + 1
 	end
 	return r
@@ -540,6 +535,7 @@ do ------ request/select
 	local function send_requests(self, timeout)
 		local sessions = {}
 		self._sessions = sessions
+		self._where = create_traceback(running_thread, 3)
 		self._resp = {}
 		local request_n = 0
 		local err
@@ -574,7 +570,7 @@ do ------ request/select
 
 	local function ignore_timout(self)
 		if self._timeout then
-			ignore_response(self._timeout)
+			ignore_response(self._timeout, self._where)
 			self._timeout = nil
 		end
 	end
@@ -634,7 +630,7 @@ do ------ request/select
 		if self._request > 0 then
 			for session, req in pairs(self._sessions) do
 				if not self._resp[session] then
-					ignore_response(session)
+					ignore_response(session, self._where)
 				end
 			end
 			self._request = 0
@@ -840,7 +836,7 @@ end
 local function system(command, ...)
 	local s = sys_service[command]
 	if not s then
-		send_error("Unknown system message : " .. command)
+		error("Unknown system message : " .. command)
 		return
 	end
 	send_response(s(...))
@@ -853,7 +849,7 @@ end
 local function request(command, ...)
 	local s = service[command]
 	if not s then
-		send_error("Unknown request message : " .. command)
+		error("Unknown request message : " .. command)
 		return
 	end
 	send_response(s(...))
