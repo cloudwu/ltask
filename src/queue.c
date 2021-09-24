@@ -65,8 +65,9 @@ queue_push_open(struct queue *q) {
 
 static inline void
 queue_push_close(struct queue *q, int tail) {
-	int succ = atomic_int_cas(&q->tail, tail, queue_position(q, tail + 1));
-	assert(succ);	// Allow only one writer
+	// Allow only one writer
+	assert(atomic_int_load(&q->tail) == tail);
+	atomic_int_store(&q->tail, queue_position(q, tail + 1));
 }
 
 static inline int
@@ -79,8 +80,9 @@ queue_pop_open(struct queue *q) {
 
 static inline void
 queue_pop_close(struct queue *q, int head) {
-	int succ = atomic_int_cas(&q->head, head, queue_position(q, head + 1));
-	assert(succ);	// Allow only one reader
+	// Allow only one reader
+	assert(atomic_int_load(&q->head) == head);
+	atomic_int_store(&q->head, queue_position(q, head + 1));
 }
 
 int
