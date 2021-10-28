@@ -8,6 +8,9 @@ ifeq ($(OS),Windows_NT)
   SHARED=--shared
   SO=dll
   LUALIB?=-L/usr/local/bin -llua54
+else ifeq($(OS), Darwin)
+  SO=so
+  SHARED= -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
 else
   SHARED=--shared -fPIC
   SO=so
