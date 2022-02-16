@@ -458,26 +458,10 @@ thread_worker(void *ud) {
 			if (nojob) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
-				if (atomic_int_load(&w->task->active_worker) == 0) {
-					debug_printf(w->logger, "It is the last active worker");
-					// It's the last active worker, try to find job again
-					atomic_int_inc(&w->task->active_worker);
-					// Acquire scheduler
-					if (!acquire_scheduler(w)) {
-						nojob = schedule_dispatch_worker(w);
-						release_scheduler(w);
-						if (!nojob) {
-							continue;
-						}
-					}
-					atomic_int_dec(&w->task->active_worker);
-				}
-				if (nojob) {
-					debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
-					worker_sleep(w);
-					atomic_int_inc(&w->task->active_worker);
-					debug_printf(w->logger, "Wakeup");
-				}
+				debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
+				worker_sleep(w);
+				atomic_int_inc(&w->task->active_worker);
+				debug_printf(w->logger, "Wakeup");
 			}
 		}
 	}

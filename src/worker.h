@@ -20,6 +20,7 @@ struct worker_thread {
 	atomic_int service_done;
 	int term_signal;
 	int sleeping;
+	int wakeup;
 	struct cond trigger;
 };
 
@@ -36,6 +37,7 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->running.id = 0;
 	worker->term_signal = 0;
 	worker->sleeping = 0;
+	worker->wakeup = 0;
 }
 
 static inline void
@@ -43,9 +45,13 @@ worker_sleep(struct worker_thread *w) {
 	if  (w->term_signal)
 		return;
 	cond_wait_begin(&w->trigger);
-	w->sleeping = 1;
-	cond_wait(&w->trigger);
-	w->sleeping = 0;
+	if (w->wakeup) {
+		w->wakeup = 0;
+	} else {
+		w->sleeping = 1;
+		cond_wait(&w->trigger);
+		w->sleeping = 0;
+	}
 	cond_wait_end(&w->trigger);
 }
 
@@ -54,6 +60,8 @@ worker_wakeup(struct worker_thread *w) {
 	int sleeping;
 	cond_trigger_begin(&w->trigger);
 	sleeping = w->sleeping;
+	if (sleeping)
+		w->wakeup = 1;
 	cond_trigger_end(&w->trigger, sleeping);
 	return sleeping;
 }
