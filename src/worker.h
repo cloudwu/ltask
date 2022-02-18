@@ -60,8 +60,7 @@ worker_wakeup(struct worker_thread *w) {
 	int sleeping;
 	cond_trigger_begin(&w->trigger);
 	sleeping = w->sleeping;
-	if (sleeping)
-		w->wakeup = 1;
+	w->wakeup = 1;
 	cond_trigger_end(&w->trigger, sleeping);
 	return sleeping;
 }
