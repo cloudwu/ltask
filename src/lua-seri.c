@@ -22,6 +22,11 @@
 #define TYPE_NUMBER_REAL 8
 
 #define TYPE_USERDATA 3
+// hibits 0 : void *
+// hibits 1 : c function
+#define TYPE_USERDATA_POINTER 0
+#define TYPE_USERDATA_CFUNCTION 1
+
 #define TYPE_SHORT_STRING 4
 // hibits 0~31 : len
 #define TYPE_LONG_STRING 5
@@ -189,8 +194,8 @@ wb_real(struct write_block *wb, double v) {
 }
 
 static inline void
-wb_pointer(struct write_block *wb, void *v) {
-	uint8_t n = TYPE_USERDATA;
+wb_pointer(struct write_block *wb, void *v, int subtype) {
+	uint8_t n = COMBINE_TYPE(TYPE_USERDATA, subtype);
 	wb_push(wb, &n, 1);
 	wb_push(wb, &v, sizeof(v));
 }
@@ -352,8 +357,15 @@ pack_one(lua_State *L, struct write_block *b, int index) {
 		break;
 	}
 	case LUA_TLIGHTUSERDATA:
-		wb_pointer(b, lua_touserdata(L,index));
+		wb_pointer(b, lua_touserdata(L,index), TYPE_USERDATA_POINTER);
 		break;
+	case LUA_TFUNCTION: {
+		lua_CFunction func = lua_tocfunction(L,index);
+		if (func == NULL || lua_getupvalue(L, index, 1) != NULL) {
+			luaL_error(L, "Only light C function can be serialized");
+		}
+		wb_pointer(b, (void *)func, TYPE_USERDATA_CFUNCTION);
+		break; }
 	case LUA_TTABLE: {
 		if (index < 0) {
 			index = lua_gettop(L) + index + 1;
@@ -530,7 +542,13 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 		}
 		break;
 	case TYPE_USERDATA:
-		lua_pushlightuserdata(L,get_pointer(L,rb));
+		if (cookie == TYPE_USERDATA_POINTER)
+			lua_pushlightuserdata(L,get_pointer(L,rb));
+		else {
+			if (cookie != TYPE_USERDATA_CFUNCTION)
+				luaL_error(L, "Invalid userdata");
+			lua_pushcfunction(L, (lua_CFunction)get_pointer(L, rb));
+		}
 		break;
 	case TYPE_SHORT_STRING:
 		get_buffer(L,rb,cookie);
