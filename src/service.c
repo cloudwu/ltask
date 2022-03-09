@@ -401,7 +401,7 @@ service_loadfile(struct service_pool *p, service_id id, const char *filename) {
 	lua_State *L = S->L;
 	if (luaL_loadfile(L, filename) != LUA_OK) {
 		const char * r = lua_tostring(S->L, -1);
-		lua_pop(S->L, 1);
+		S->status = SERVICE_STATUS_DEAD;
 		return r;
 	}
 	S->status = SERVICE_STATUS_IDLE;
@@ -416,7 +416,7 @@ service_loadstring(struct service_pool *p, service_id id, const char *source) {
 	lua_State *L = S->L;
 	if (luaL_loadstring(L, source) != LUA_OK) {
 		const char * r = lua_tostring(S->L, -1);
-		lua_pop(S->L, 1);
+		S->status = SERVICE_STATUS_DEAD;
 		return r;
 	}
 	S->status = SERVICE_STATUS_IDLE;
