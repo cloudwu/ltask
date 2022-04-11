@@ -235,6 +235,7 @@ local function init()
 		end
 	end
 	S.uniqueservice(table.unpack(config.logger))
+	return true
 end
 
 local function boot()
@@ -248,6 +249,7 @@ end
 
 ltask.dispatch(S)
 
-init()
-boot()
+if init() then
+	boot()
+end
 quit()
