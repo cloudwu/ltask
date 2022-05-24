@@ -28,11 +28,11 @@ systime_wall() {
 #elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
 	struct timespec ti;
 	clock_gettime(CLOCK_REALTIME, &ti);
-	t = ti.tv_sec * 100 + (ti.tv_nsec / 10000000);
+	t = (uint64_t)ti.tv_sec * 100 + (ti.tv_nsec / 10000000);
 #else
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
-	t = tv.tv_sec * 100 + tv.tv_usec / 10000;
+	t = (uint64_t)tv.tv_sec * 100 + tv.tv_usec / 10000;
 #endif
 	return t;
 }
