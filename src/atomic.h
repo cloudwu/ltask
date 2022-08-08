@@ -106,7 +106,7 @@ atomic_int_dec(atomic_int *aint) {
 
 static inline int
 atomic_int_cas(atomic_int *aint, int oval, int nval) {
-	return atomic_compare_exchange_weak(aint, &oval, nval);
+	return atomic_compare_exchange_strong(aint, &oval, nval);
 }
 
 static inline void
@@ -127,7 +127,7 @@ atomic_ptr_store(atomic_ptr *aptr, void *v) {
 static inline int
 atomic_ptr_cas(atomic_ptr *aptr, void *oval, void *nval) {
 	uintptr_t temp = (uintptr_t)oval;
-	return atomic_compare_exchange_weak(aptr, &temp, (uintptr_t)nval);
+	return atomic_compare_exchange_strong(aptr, &temp, (uintptr_t)nval);
 }
 
 #endif
