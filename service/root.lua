@@ -36,7 +36,7 @@ do
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
 			local errobj = ltask.unpack_remove(msg, sz)
-			ltask.log("Root init error:", table.concat(errobj, "\n"))
+			ltask.log("Root fatal:", table.concat(errobj, "\n"))
 			writelog()
 			ltask.quit()
 		end
@@ -206,7 +206,7 @@ end
 
 ltask.signal_handler(signal_handler)
 
-local function boot()
+local function init()
 	local request = ltask.request()
 	for i, t in ipairs(config.exclusive) do
 		local name, args
@@ -235,10 +235,21 @@ local function boot()
 		end
 	end
 	S.uniqueservice(table.unpack(config.logger))
-	S.spawn(table.unpack(config.bootstrap))
+	return true
+end
+
+local function boot()
+	local ok, errobj = pcall(function ()
+		S.spawn(table.unpack(config.bootstrap))
+	end)
+	if not ok then
+		ltask.log("Root init error:", tostring(errobj))
+	end
 end
 
 ltask.dispatch(S)
 
-boot()
+if init() then
+	boot()
+end
 quit()
