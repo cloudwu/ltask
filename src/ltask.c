@@ -440,8 +440,7 @@ thread_worker(void *ud) {
 					if (worker_complete_job(w)) {
 						// Do it self
 						schedule_dispatch(w->task);
-						int fail = worker_complete_job(w);
-						assert(!fail);
+						while (worker_complete_job(w)) {}	// CAS may fail spuriously
 					}
 					schedule_dispatch_worker(w);
 					release_scheduler(w);
