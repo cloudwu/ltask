@@ -669,11 +669,21 @@ function ltask.quit()
 	end
 end
 
-local service
+local service = nil
 local sys_service = {}
 
 function ltask.dispatch(handler)
-	service = handler
+	if handler then
+		service = service or {}
+		-- merge handler into service
+		for k,v in pairs(handler) do
+			if type(v) == "function" then
+				assert(service[k] == nil)
+				service[k] = v
+			end
+		end
+	end
+	return service
 end
 
 function ltask.signal_handler(f)	-- root only
