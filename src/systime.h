@@ -7,4 +7,7 @@
 uint64_t systime_wall();
 uint64_t systime_mono();
 
+uint64_t systime_counter();
+uint64_t systime_frequency();
+
 #endif

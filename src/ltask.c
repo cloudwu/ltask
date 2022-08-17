@@ -18,6 +18,7 @@
 #include "sysapi.h"
 #include "debuglog.h"
 #include "logqueue.h"
+#include "systime.h"
 
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
@@ -1142,6 +1143,14 @@ ltask_now(lua_State *L) {
 }
 
 static int
+ltask_counter(lua_State *L) {
+	uint64_t freq = lua_tointeger(L, lua_upvalueindex(1));
+	uint64_t ti = systime_counter();
+	lua_pushnumber(L, (double)ti / freq);
+	return 1;
+}
+
+static int
 ltask_pushlog(lua_State *L) {
 	struct logmessage msg;
 	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
@@ -1232,10 +1241,15 @@ luaopen_ltask(lua_State *L) {
 		{ "poplog", ltask_poplog },
 		{ "mem_limit", ltask_memlimit },
 		{ "mem_count", ltask_memcount },
+		{ "counter", NULL },
 		{ NULL, NULL },
 	};
 
 	luaL_newlib(L, l);
+	uint64_t f = systime_frequency();
+	lua_pushinteger(L, f);
+	lua_pushcclosure(L, ltask_counter, 1);
+	lua_setfield(L, -2, "counter");
 	sys_init();
 	return 1;
 }

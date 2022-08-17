@@ -55,3 +55,34 @@ systime_mono() {
 #endif
 	return t;
 }
+
+uint64_t
+systime_counter() {
+#if defined(_WIN32)
+	LARGE_INTEGER li;
+	QueryPerformanceCounter(&li);
+	uint64_t i64 = li.QuadPart;
+#elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	uint64_t i64 = now.tv_sec*(uint64_t)(1000000000) + now.tv_nsec;
+#else
+	struct timeval now;
+	gettimeofday(&now, 0);
+	uint64_t i64 = now.tv_sec*(uint64_t)(1000000) + now.tv_usec;
+#endif
+	return i64;
+}
+
+uint64_t
+systime_frequency() {
+#if defined(_WIN32)
+	LARGE_INTEGER li;
+	QueryPerformanceFrequency(&li);
+	return li.QuadPart;
+#elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
+	return (uint64_t)(1000000000);
+#else
+	return (uint64_t)(1000000);
+#endif
+}

@@ -16,7 +16,9 @@ function S.ping(...)
 	ltask.timeout(10, function() print(1) end)
 	ltask.timeout(20, function() print(2) end)
 	ltask.timeout(30, function() print(3) end)
+	local t = ltask.counter()
 	ltask.sleep(40) -- sleep 0.4 sec
+	print("TIME:", ltask.counter() - t)
 	return "PING", ...
 end
 
