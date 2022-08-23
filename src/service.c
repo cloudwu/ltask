@@ -51,6 +51,7 @@ struct service {
 	int receipt;
 	int thread_id;
 	service_id id;
+	char label[32];
 	struct memory_stat stat;
 };
 
@@ -362,6 +363,23 @@ service_sets(struct service_pool *p, service_id id, const char *key, const char 
 		return 1;
 	}
 	return 0;
+}
+
+int
+service_setlabel(struct service_pool *p, service_id id, const char *label) {
+	struct service *S = get_service(p, id);
+	if (S == NULL)
+		return 1;
+	snprintf(S->label, sizeof(S->label), "ltask - %s", label);
+	return 0;
+}
+
+const char *
+service_getlabel(struct service_pool *p, service_id id) {
+	struct service *S = get_service(p, id);
+	if (S == NULL)
+		return "ltask - dead service";
+	return S->label;
 }
 
 void 
