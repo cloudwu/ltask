@@ -14,7 +14,7 @@ static void thread_join(struct thread * threads, int n);
 
 #if defined(DEBUGTHREADNAME)
 
-void inline
+static void inline
 thread_setname(const char* name) {
 	typedef HRESULT (WINAPI *SetThreadDescriptionProc)(HANDLE, PCWSTR);
 	SetThreadDescriptionProc SetThreadDescription = (SetThreadDescriptionProc)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription");
@@ -97,7 +97,7 @@ thread_join(struct thread * threads, int n) {
 #	include <pthread_np.h>
 #endif
 
-void inline
+static void inline
 thread_setname(const char* name) {
 #if defined(__APPLE__)
 	pthread_setname_np(name);
