@@ -1151,6 +1151,13 @@ ltask_counter(lua_State *L) {
 }
 
 static int
+ltask_walltime(lua_State *L) {
+	uint64_t ti = systime_wall();
+	lua_pushinteger(L, ti);
+	return 1;
+}
+
+static int
 ltask_pushlog(lua_State *L) {
 	struct logmessage msg;
 	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
@@ -1237,6 +1244,7 @@ luaopen_ltask(lua_State *L) {
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
+		{ "walltime", ltask_walltime },
 		{ "pushlog", ltask_pushlog },
 		{ "poplog", ltask_poplog },
 		{ "mem_limit", ltask_memlimit },
