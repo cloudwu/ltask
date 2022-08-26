@@ -411,6 +411,7 @@ thread_worker(void *ud) {
 		}
 		service_id id = worker_get_job(w);
 		if (id.id) {
+			thread_setname(service_getlabel(P, id));
 			w->running = id;
 			if (service_status_get(P, id) != SERVICE_STATUS_DEAD) {
 				debug_printf(w->logger, "Run service %x", id.id);
@@ -449,6 +450,7 @@ thread_worker(void *ud) {
 				}
 			}
 		} else {
+			thread_setname("ltask - idle worker");
 			// No job, try to acquire scheduler to find a job
 			int nojob = 1;
 			if (!acquire_scheduler(w)) {
@@ -504,6 +506,7 @@ thread_exclusive(void *ud) {
 	struct service_pool * P = e->task->services;
 	service_id id = e->service;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
+	thread_setname(service_getlabel(P, id));
 	while (!e->term_signal) {
 		if (service_resume(P, id, thread_id)) {
 			// Resume error : quit
@@ -673,6 +676,7 @@ static void
 thread_logger(void *ud) {
 	struct ltask *t = (struct ltask *)ud;
 	FILE *f = t->logfile;
+	thread_setname("ltask - logger thread");
 	while (atomic_int_load(&t->thread_count) > 0) {
 		dlog_writefile(f);
 		sys_sleep(100);	// sleep 0.1s
@@ -748,9 +752,9 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		luaL_error(L, "New service fail : %s", get_error_message(L));
 		return;
 	}
-	if (service_sets(task->services, id, "SERVICE_LABEL", label)) {
+	if (service_setlabel(task->services, id, label)) {
 		service_delete(S, id);
-		luaL_error(L, "set SERVICE_LABEL fail");
+		luaL_error(L, "set label fail");
 		return;
 	}
 	const char * err = NULL;
@@ -1239,6 +1243,13 @@ ltask_memcount(lua_State *L) {
 	return 1;
 }
 
+static int
+ltask_label(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	lua_pushstring(L, service_getlabel(S->task->services, S->id));
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1258,6 +1269,7 @@ luaopen_ltask(lua_State *L) {
 		{ "poplog", ltask_poplog },
 		{ "mem_limit", ltask_memlimit },
 		{ "mem_count", ltask_memcount },
+		{ "label", ltask_label },
 		{ "counter", NULL },
 		{ NULL, NULL },
 	};

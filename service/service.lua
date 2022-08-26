@@ -21,7 +21,7 @@ function ltask.log(...)
 	ltask.pushlog(ltask.pack(...))
 end
 
-ltask.log(string.format("${startup:%s}", debug.getregistry().SERVICE_LABEL))
+ltask.log(string.format("${startup:%s}", ltask.label()))
 
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
