@@ -347,7 +347,7 @@ end
 
 function ltask.call(address, ...)
 	if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
-		error(string.format("%x is dead", address))
+		error(string.format("${service:%d} is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
@@ -395,7 +395,7 @@ end
 
 function ltask.syscall(address, ...)
 	if not ltask.post_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...)) then
-		error(string.format("%x is dead", address))
+		error(string.format("${service:%d} is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
