@@ -954,12 +954,17 @@ execute_timer(void *ud, void *arg) {
 			// too many messages, blocked
 			message_delete(msg);
 			lua_State *L = te->L;
-			lua_newtable(L);
+			if (lua_istable(L, 1)) {
+				int n = lua_rawlen(L, 1);
+				te->blocked = n/2 + 1;
+			} else {
+				lua_newtable(L);
+				te->blocked = 1;
+			}
 			lua_pushinteger(L, event->session);
-			lua_rawseti(L, -2, 1);
+			lua_rawseti(L, -2, te->blocked * 2 - 1);
 			lua_pushinteger(L, event->id.id);
-			lua_rawseti(L, -2 , 2);
-			te->blocked = 1;
+			lua_rawseti(L, -2 , te->blocked * 2 - 0);
 		}
 	}
 }
@@ -970,6 +975,10 @@ lexclusive_timer_update(lua_State *L) {
 	struct timer *t = S->task->timer;
 	if (t == NULL)
 		return luaL_error(L, "Init timer before bootstrap");
+	if (lua_gettop(L) > 1) {
+		lua_settop(L, 1);
+		luaL_checktype(L, 1, LUA_TTABLE);
+	}
 
 	int ethread = service_thread_id(S->task->services, S->id);
 	struct queue *q = get_exclusive_thread_sending(S->task, ethread);
