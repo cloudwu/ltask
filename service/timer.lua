@@ -12,13 +12,23 @@ local function send_blocked_message(blocked)
 end
 
 ltask.fork(function ()
+	local last = ltask.walltime()
+	local blocked = {}
 	while true do
-		local blocked = exclusive.timer_update()
-		exclusive.sleep(1)	-- sleep 1/1000s
-		if blocked then
-			send_blocked_message(blocked)
-		end
 		ltask.sleep(0)
+		local now = ltask.walltime()
+		local delta = now - last
+		if delta > 0 then
+			for _ = 1, delta * 10 do
+				exclusive.timer_update(blocked)
+			end
+			last = now
+		end
+		exclusive.sleep(10)
+		if #blocked > 0 then
+			send_blocked_message(blocked)
+			blocked = {}
+		end
 	end
 end)
 
