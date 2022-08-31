@@ -296,8 +296,7 @@ local function resume_session(co, ...)
 		session_coroutine_response[co] = nil
 
 		errobj = traceback(errobj, co)
-		if from == nil or from == 0 then
-			-- system message
+		if from == nil or from == 0 or session == 0 then
 			print(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
@@ -327,10 +326,10 @@ end
 local SESSION = {}
 
 local function send_response(...)
-	local from = session_coroutine_address[running_thread]
 	local session = session_coroutine_response[running_thread]
 
-	if session and session > 0 then
+	if session > 0 then
+		local from = session_coroutine_address[running_thread]
 		ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
 	end
 
@@ -385,12 +384,7 @@ local ignore_response ; do
 end
 
 function ltask.send(address, ...)
-	local r = ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
-	if r then
-		ignore_response(session_id, create_traceback(running_thread, 3))
-		session_id = session_id + 1
-	end
-	return r
+	return ltask.post_message(address, 0, MESSAGE_REQUEST, ltask.pack(...))
 end
 
 function ltask.syscall(address, ...)
