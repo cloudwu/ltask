@@ -314,8 +314,25 @@ local function wakeup_session(co, ...)
 	end
 end
 
--- todo: cache thread
-local new_thread = coroutine.create
+local coroutine_pool = setmetatable({}, { __mode = "kv" })
+
+local function new_thread(f)
+	local co = table.remove(coroutine_pool)
+	if co == nil then
+		co = coroutine.create(function(...)
+			f(...)
+			while true do
+				f = nil
+				coroutine_pool[#coroutine_pool+1] = co
+				f = coroutine.yield()
+				f(coroutine.yield())
+			end
+		end)
+	else
+		coroutine.resume(co, f)
+	end
+	return co
+end
 
 local function new_session(f, from, session)
 	local co = new_thread(f)
