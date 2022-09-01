@@ -519,7 +519,7 @@ thread_exclusive(void *ud) {
 }
 
 static int
-lexclusive_scheduling(lua_State *L) {
+lexclusive_scheduling_(lua_State *L) {
 	struct exclusive_thread *e = (struct exclusive_thread *)lua_touserdata(L, lua_upvalueindex(1));
 	exclusive_message(e);
 	return 0;
@@ -795,9 +795,16 @@ preinit_thread(void *args) {
 	lua_State *L = t->L;
 	while (!atomic_int_load(&t->term)) {
 		if (L) {
-			int r = 0;
-			if (lua_resume(L, NULL, 0, &r) != LUA_YIELD) {
+			int result = 0;
+			lua_pushboolean(L, 1);
+			int r = lua_resume(L, NULL, 1, &result);
+			if (r != LUA_YIELD) {
+				if (r != LUA_OK) {
+					debug_printf(task->logger, "preinit error : %s", lua_tostring(L, -1));
+				}
 				L = NULL;
+			} else {
+				lua_pop(L, result);
 			}
 		} else {
 			sys_sleep(1);
@@ -1357,6 +1364,15 @@ luaopen_ltask(lua_State *L) {
 	return 1;
 }
 
+static int
+lexclusive_scheduling(lua_State *L) {
+	if (lua_getfield(L, LUA_REGISTRYINDEX, "EXCLUSIVE_HANDLE") != LUA_TLIGHTUSERDATA)
+		return luaL_error(L, "Not in exclusive service");
+
+	lua_pushcclosure(L, lexclusive_scheduling_, 1);
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask_exclusive(lua_State *L) {
 	luaL_checkversion(L);
@@ -1364,17 +1380,11 @@ luaopen_ltask_exclusive(lua_State *L) {
 		{ "send", lexclusive_send_message },
 		{ "timer_update", lexclusive_timer_update },
 		{ "sleep", lexclusive_sleep },
-		{ "scheduling", NULL },
+		{ "scheduling", lexclusive_scheduling },
 		{ NULL, NULL },
 	};
 
 	luaL_newlib(L, l);
-
-	if (lua_getfield(L, LUA_REGISTRYINDEX, "EXCLUSIVE_HANDLE") != LUA_TLIGHTUSERDATA)
-		return luaL_error(L, "Not in exclusive service");
-
-	lua_pushcclosure(L, lexclusive_scheduling, 1);
-	lua_setfield(L, -2, "scheduling");
 
 	return 1;
 }

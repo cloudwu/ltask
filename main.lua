@@ -79,8 +79,9 @@ local exclusive = require "ltask.exclusive"
 
 local i = 0
 while true do
-	print ("Dummy Tick", i)
-	coroutine.yield()
+	local pre = coroutine.yield()
+	print ("Dummy Tick", pre, i)
+	io.flush()
 	exclusive.sleep(1000)
 	i = i + 1
 end
@@ -88,6 +89,7 @@ end
 
 	local p = boot.preinit(dummy)
 	local label = "Dummy"
+	os.execute "sleep 1"
 
 	local sid = boot.new_service_preinit(label, id + 1, p)
 	assert(id + 1 == sid)

@@ -116,12 +116,17 @@ service_destory(struct service_pool *p) {
 	free(p);
 }
 
+static void
+init_service_key(lua_State *L, void *ud, size_t sz) {
+	lua_pushlstring(L, (const char *)ud, sz);
+	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
+}
+
 static int
 init_service(lua_State *L) {
 	void *ud = lua_touserdata(L, 1);
-	int sz = lua_tointeger(L, 2);
-	lua_pushlstring(L, (const char *)ud, sz);
-	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
+	size_t sz = lua_tointeger(L, 2);
+	init_service_key(L, ud, sz);
 	luaL_openlibs(L);
 	lua_gc(L, LUA_GCGEN, 0, 0);
 	return 0;
@@ -246,6 +251,7 @@ error_message(lua_State *fromL, lua_State *toL, const char *msg) {
 static int
 preinit(lua_State *L) {
 	luaL_openlibs(L);
+	lua_gc(L, LUA_GCGEN, 0, 0);
 	const char * source = (const char *)lua_touserdata(L, 1);
 	if (luaL_loadstring(L, source) != LUA_OK) {
 		return lua_error(L);
@@ -291,6 +297,14 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 		L = lua_newstate(service_alloc, &S->stat);
 		if (L == NULL)
 			return 1;
+		lua_pushcfunction(L, init_service);
+		lua_pushlightuserdata(L, ud);
+		lua_pushinteger(L, sz);
+		if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+			error_message(L, pL, "Init lua state error");
+			lua_close(L);
+			return 1;
+		}
 	} else {
 		L = eL;
 		void *stat;
@@ -303,14 +317,7 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 		memcpy(&S->stat, stat, sizeof(S->stat));
 		lua_setallocf(L, service_alloc, &S->stat);
 		S->status = SERVICE_STATUS_IDLE;
-	}
-	lua_pushcfunction(L, init_service);
-	lua_pushlightuserdata(L, ud);
-	lua_pushinteger(L, sz);
-	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-		error_message(L, pL, "Init lua state error");
-		lua_close(L);
-		return 1;
+		init_service_key(L, ud, sz);
 	}
 	S->msg = queue_new_ptr(p->queue_length);
 	if (S->msg == NULL) {
