@@ -121,7 +121,6 @@ init_service(lua_State *L) {
 	void *ud = lua_touserdata(L, 1);
 	int sz = lua_tointeger(L, 2);
 	lua_pushlstring(L, (const char *)ud, sz);
-	printf("Init service %p\n", L);
 	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
 	luaL_openlibs(L);
 	lua_gc(L, LUA_GCGEN, 0, 0);

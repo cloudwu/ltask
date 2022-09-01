@@ -761,7 +761,6 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		thread_wait(preinit->thread);
 		free(preinit->stat);
 		preL = preinit->L;
-		printf("preL = %p\n", preL);
 		free(preinit);
 	}
 
