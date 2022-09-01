@@ -7,6 +7,8 @@ struct thread {
 };
 
 static void thread_join(struct thread * threads, int n);
+static void * thread_run(struct thread thread);
+static void thread_wait(void *pid);
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 
@@ -80,9 +82,35 @@ thread_join(struct thread * threads, int n) {
 	HeapFree(GetProcessHeap(), 0, thread_handle);
 }
 
+static DWORD inline WINAPI
+thread_function_run(LPVOID lpParam) {
+	struct thread * t = (struct thread *)lpParam;
+	t->func(t->ud);
+	HeapFree(GetProcessHeap(), 0, t);
+	return 0;
+}
+
+static inline void *
+thread_run(struct thread thread) {
+	struct thread * t = (struct thread *)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY, sizeof(*t));
+	*t = thread;
+	HANDLE h = CreateThread(NULL, 0, thread_function_run, (LPVOID)t, 0, NULL);
+	if (h == NULL) {
+		HeapFree(GetProcessHeap(), 0, t);
+	}
+	return (void *)h;
+}
+
+static inline void
+thread_wait(void *pid) {
+	HANDLE h = (HANDLE)pid;
+	WaitForSingleObject(h, INFINITE);
+}
+
 #else
 
 #include <pthread.h>
+#include <stdlib.h>
 
 #if defined(DEBUGTHREADNAME)
 
@@ -143,6 +171,32 @@ thread_join(struct thread *threads, int n) {
 	for (i=0;i<n;i++) {
 		pthread_join(pid[i], NULL); 
 	}
+}
+
+static inline void *
+thread_function_run(void * args) {
+	struct thread * t = (struct thread *)args;
+	t->func(t->ud);
+	free(t);
+	return NULL;
+}
+
+static inline void *
+thread_run(struct thread thread) {
+	pthread_t pid;
+	struct thread *h = (struct thread *)malloc(sizeof(*h));
+	*h = thread;
+	if (pthread_create(&pid, NULL, thread_function_run, h)) {
+		free(h);
+		return NULL;
+	}
+	return (void *)pid;
+}
+
+static inline void
+thread_wait(void *p) {
+	pthread_t pid = (pthread_t)p;
+	pthread_join(pid, NULL);
 }
 
 #endif

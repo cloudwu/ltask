@@ -64,11 +64,37 @@ boot.init(config)
 local _ <close> = toclose(boot.deinit)
 boot.init_timer()
 
+local id = 0
 for i, t in ipairs(config.exclusive) do
 	local label = type(t) == "table" and t[1] or t
-	local id = i + 1
+	id = i + 1
 	exclusive_thread(label, id)
 end
+
+-- test exclusive transfer
+
+local function dummy_service()
+	local dummy = [[
+local exclusive = require "ltask.exclusive"
+
+local i = 0
+while true do
+	print ("Dummy Tick", i)
+	coroutine.yield()
+	exclusive.sleep(1000)
+	i = i + 1
+end
+	]]
+
+	local p = boot.preinit(dummy)
+	local label = "Dummy"
+
+	local sid = boot.new_service_preinit(label, id + 1, p)
+	assert(id + 1 == sid)
+	boot.new_thread(sid)
+end
+
+-- dummy_service()
 
 bootstrap()	-- launch root
 

@@ -121,6 +121,7 @@ init_service(lua_State *L) {
 	void *ud = lua_touserdata(L, 1);
 	int sz = lua_tointeger(L, 2);
 	lua_pushlstring(L, (const char *)ud, sz);
+	printf("Init service %p\n", L);
 	lua_setfield(L, LUA_REGISTRYINDEX, LTASK_KEY);
 	luaL_openlibs(L);
 	lua_gc(L, LUA_GCGEN, 0, 0);
@@ -243,14 +244,67 @@ error_message(lua_State *fromL, lua_State *toL, const char *msg) {
 	}
 }
 
+static int
+preinit(lua_State *L) {
+	luaL_openlibs(L);
+	const char * source = (const char *)lua_touserdata(L, 1);
+	if (luaL_loadstring(L, source) != LUA_OK) {
+		return lua_error(L);
+	}
+	return 1;
+}
+
+void *
+service_preinit(void *pL, const char *source) {
+	struct memory_stat *stat = (struct memory_stat *)malloc(sizeof(*stat));
+	memset(stat, 0, sizeof(*stat));
+	lua_State *L = lua_newstate(service_alloc, stat);
+	if (L == NULL) {
+		free(stat);
+	}
+	lua_pushcfunction(L, preinit);
+	lua_pushlightuserdata(L, (void *)source);
+	if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+		size_t sz;
+		const char * err = lua_tolstring(L, -1, &sz);
+		char msg[4096];
+		if (sz > sizeof(msg)) {
+			sz = sizeof(msg);
+		}
+		memcpy(msg, err, sz);
+		lua_close(L);
+		free(stat);
+		L = (lua_State *)pL;
+		lua_pushlstring(L, msg, sz);
+		lua_error(L);
+		return NULL;
+	}
+	return (void *)L;
+}
+
 int
-service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL) {
+service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, void *eL) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
-	memset(&S->stat, 0, sizeof(S->stat));
-	lua_State *L = lua_newstate(service_alloc, &S->stat);
-	if (L == NULL)
-		return 1;
+	lua_State *L;
+	if (eL == NULL) {
+		memset(&S->stat, 0, sizeof(S->stat));
+		L = lua_newstate(service_alloc, &S->stat);
+		if (L == NULL)
+			return 1;
+	} else {
+		L = eL;
+		void *stat;
+		lua_Alloc alloc = lua_getallocf(L, &stat);
+		if (alloc != service_alloc) {
+			lua_close(L);
+			error_message(NULL, pL, "Invalid VM, can't move it");
+			return 1;
+		}
+		memcpy(&S->stat, stat, sizeof(S->stat));
+		lua_setallocf(L, service_alloc, &S->stat);
+		S->status = SERVICE_STATUS_IDLE;
+	}
 	lua_pushcfunction(L, init_service);
 	lua_pushlightuserdata(L, ud);
 	lua_pushinteger(L, sz);

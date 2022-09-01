@@ -741,13 +741,31 @@ ltask_deinit(lua_State *L) {
 	return 0;
 }
 
+struct preload_thread {
+	lua_State *L;
+	void *stat;
+	void *thread;
+	atomic_int term;
+};
+
 static void
-newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source, struct preload_thread *preinit) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
 	struct service_pool *S = task->services;
-	if (service_init(S, id, (void *)&ud, sizeof(ud), L) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
+	lua_State *preL = NULL;
+
+	if (preinit) {
+		atomic_int_store(&preinit->term, 1);
+		thread_wait(preinit->thread);
+		free(preinit->stat);
+		preL = preinit->L;
+		printf("preL = %p\n", preL);
+		free(preinit);
+	}
+
+	if (service_init(S, id, (void *)&ud, sizeof(ud), L, preL) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
 		service_delete(S, id);
 		luaL_error(L, "New service fail : %s", get_error_message(L));
 		return;
@@ -757,17 +775,57 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		luaL_error(L, "set label fail");
 		return;
 	}
-	const char * err = NULL;
-	if (filename_source[0] == '@') {
-		err = service_loadfile(S, id, filename_source+1);
-	} else {
-		err = service_loadstring(S, id, filename_source);
+	if (filename_source) {
+		const char * err = NULL;
+		if (filename_source[0] == '@') {
+			err = service_loadfile(S, id, filename_source+1);
+		} else {
+			err = service_loadstring(S, id, filename_source);
+		}
+		if (err) {
+			lua_pushstring(L, err);
+			service_delete(S, id);
+			lua_error(L);
+		}
 	}
-	if (err) {
-		lua_pushstring(L, err);
-		service_delete(S, id);
-		lua_error(L);
+}
+
+static void
+preinit_thread(void *args) {
+	struct preload_thread * t = (struct preload_thread *)args;
+	lua_State *L = t->L;
+	while (!atomic_int_load(&t->term)) {
+		if (L) {
+			int r = 0;
+			if (lua_resume(L, NULL, 0, &r) != LUA_YIELD) {
+				L = NULL;
+			}
+		} else {
+			sys_sleep(1);
+		}
 	}
+}
+
+static int
+ltask_preinit(lua_State *L) {
+	struct preload_thread * p = (struct preload_thread *)malloc(sizeof(*p));
+	p->L = NULL;
+	p->stat = NULL;
+	p->thread = NULL;
+	atomic_int_init(&p->term, 0);
+	const char * source = luaL_checkstring(L, 1);
+	p->L = (lua_State *)service_preinit((void *)L, source);
+	lua_getallocf(p->L, &p->stat);
+
+	struct thread th;
+	th.func = preinit_thread;
+	th.ud = (void *)p;
+
+	p->thread = thread_run(th);
+
+	lua_pushlightuserdata(L, (void *)p);
+
+	return 1;
 }
 
 static int
@@ -776,8 +834,23 @@ ltask_newservice(lua_State *L) {
 	const char *label = luaL_checkstring(L, 1);
 	const char *filename_source = luaL_checkstring(L, 2);
 	unsigned int sid = luaL_optinteger(L, 3, 0);
+
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, label, filename_source);
+	newservice(L, task, id, label, filename_source, NULL);
+	lua_pushinteger(L, id.id);
+	return 1;
+}
+
+static int
+ltask_newservice_preinit(lua_State *L) {
+	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
+	const char *label = luaL_checkstring(L, 1);
+	unsigned int sid = luaL_checkinteger(L, 2);
+	luaL_checktype(L, 3, LUA_TLIGHTUSERDATA);
+	struct preload_thread *preload = (struct preload_thread *)lua_touserdata(L, 3);
+
+	service_id id = service_new(task->services, sid);
+	newservice(L, task, id, label, NULL, preload);
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -884,6 +957,8 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "init_timer", ltask_init_timer },
 		{ "init_root", ltask_init_root },
 		{ "pushlog", ltask_boot_pushlog },
+		{ "preinit", ltask_preinit },
+		{ "new_service_preinit", ltask_newservice_preinit },
 		{ NULL, NULL },
 	};
 	
@@ -1313,7 +1388,7 @@ ltask_initservice(lua_State *L) {
 	const char *filename_source = luaL_checkstring(L, 3);
 
 	service_id id = { sid };
-	newservice(L, S->task, id, label, filename_source);
+	newservice(L, S->task, id, label, filename_source, NULL);
 
 	return 0;
 }
