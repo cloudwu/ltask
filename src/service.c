@@ -317,6 +317,7 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 			return 1;
 		}
 		memcpy(&S->stat, stat, sizeof(S->stat));
+		free(stat);
 		lua_setallocf(L, service_alloc, &S->stat);
 		S->status = SERVICE_STATUS_IDLE;
 		init_service_key(L, ud, sz);

@@ -743,7 +743,6 @@ ltask_deinit(lua_State *L) {
 
 struct preload_thread {
 	lua_State *L;
-	void *stat;
 	void *thread;
 	atomic_int term;
 };
@@ -759,7 +758,6 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 	if (preinit) {
 		atomic_int_store(&preinit->term, 1);
 		thread_wait(preinit->thread);
-		free(preinit->stat);
 		preL = preinit->L;
 		free(preinit);
 	}
@@ -816,12 +814,10 @@ static int
 ltask_preinit(lua_State *L) {
 	struct preload_thread * p = (struct preload_thread *)malloc(sizeof(*p));
 	p->L = NULL;
-	p->stat = NULL;
 	p->thread = NULL;
 	atomic_int_init(&p->term, 0);
 	const char * source = luaL_checkstring(L, 1);
 	p->L = (lua_State *)service_preinit((void *)L, source);
-	lua_getallocf(p->L, &p->stat);
 
 	struct thread th;
 	th.func = preinit_thread;
