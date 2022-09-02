@@ -162,6 +162,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	if (s == NULL)
 		return result;
 	s->L = NULL;
+	s->rL = NULL;
 	s->msg = NULL;
 	s->out = NULL;
 	s->bounce = NULL;
