@@ -183,6 +183,13 @@ get_service(struct service_pool *p, service_id id) {
 	return S;
 }
 
+static void
+replace_service(struct service_pool *p, service_id id, struct service *s) {
+	struct service *S = *service_slot(p, id.id);
+	assert(S->id.id == id.id);
+	*service_slot(p, id.id) = s;
+}
+
 static inline int
 check_limit(struct memory_stat *stat) {
 	if (stat->limit == 0)
@@ -262,12 +269,18 @@ preinit(lua_State *L) {
 }
 
 void *
+service_preinit_L(struct service *s) {
+	return s->L;
+}
+
+struct service *
 service_preinit(void *pL, const char *source) {
-	struct memory_stat *stat = (struct memory_stat *)malloc(sizeof(*stat));
+	struct service *s = (struct service *)malloc(sizeof(*s));
+	struct memory_stat *stat = &s->stat;
 	memset(stat, 0, sizeof(*stat));
 	lua_State *L = lua_newstate(service_alloc, stat);
 	if (L == NULL) {
-		free(stat);
+		free(s);
 	}
 	lua_pushcfunction(L, preinit);
 	lua_pushlightuserdata(L, (void *)source);
@@ -280,21 +293,22 @@ service_preinit(void *pL, const char *source) {
 		}
 		memcpy(msg, err, sz);
 		lua_close(L);
-		free(stat);
+		free(s);
 		L = (lua_State *)pL;
 		lua_pushlstring(L, msg, sz);
 		lua_error(L);
 		return NULL;
 	}
-	return (void *)L;
+	s->L = L;
+	return s;
 }
 
 int
-service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, void *eL) {
+service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, struct service *preS) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
 	lua_State *L;
-	if (eL == NULL) {
+	if (preS == NULL) {
 		memset(&S->stat, 0, sizeof(S->stat));
 		L = lua_newstate(service_alloc, &S->stat);
 		if (L == NULL)
@@ -308,17 +322,13 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 			return 1;
 		}
 	} else {
-		L = eL;
-		void *stat;
-		lua_Alloc alloc = lua_getallocf(L, &stat);
-		if (alloc != service_alloc) {
-			lua_close(L);
-			error_message(NULL, pL, "Invalid VM, can't move it");
-			return 1;
-		}
-		memcpy(&S->stat, stat, sizeof(S->stat));
-		free(stat);
-		lua_setallocf(L, service_alloc, &S->stat);
+		replace_service(p, id, preS);
+		struct memory_stat stat = preS->stat;
+		L = preS->L;
+		memcpy(preS, S, sizeof(struct service));
+		free(S);
+		S = preS;
+		S->stat = stat;
 		S->status = SERVICE_STATUS_IDLE;
 		init_service_key(L, ud, sz);
 	}

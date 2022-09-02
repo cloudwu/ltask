@@ -744,6 +744,7 @@ ltask_deinit(lua_State *L) {
 struct preload_thread {
 	lua_State *L;
 	void *thread;
+	struct service *service;
 	atomic_int term;
 };
 
@@ -753,16 +754,16 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 	ud.task = task;
 	ud.id = id;
 	struct service_pool *S = task->services;
-	lua_State *preL = NULL;
+	struct service *preS = NULL;
 
 	if (preinit) {
 		atomic_int_store(&preinit->term, 1);
 		thread_wait(preinit->thread);
-		preL = preinit->L;
+		preS = preinit->service;
 		free(preinit);
 	}
 
-	if (service_init(S, id, (void *)&ud, sizeof(ud), L, preL) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
+	if (service_init(S, id, (void *)&ud, sizeof(ud), L, preS) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
 		service_delete(S, id);
 		luaL_error(L, "New service fail : %s", get_error_message(L));
 		return;
@@ -815,9 +816,11 @@ ltask_preinit(lua_State *L) {
 	struct preload_thread * p = (struct preload_thread *)malloc(sizeof(*p));
 	p->L = NULL;
 	p->thread = NULL;
+	p->service = NULL;
 	atomic_int_init(&p->term, 0);
 	const char * source = luaL_checkstring(L, 1);
-	p->L = (lua_State *)service_preinit((void *)L, source);
+	p->service = service_preinit((void *)L, source);
+	p->L = service_preinit_L(p->service);
 
 	struct thread th;
 	th.func = preinit_thread;

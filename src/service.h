@@ -19,6 +19,7 @@
 struct service_pool;
 struct ltask_config;
 struct message;
+struct service;
 
 typedef struct {
 	unsigned int id;
@@ -28,7 +29,7 @@ struct service_pool * service_create(struct ltask_config *config);
 void service_destory(struct service_pool *p);
 service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
-int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, void *L);
+int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, struct service *s);
 int service_requiref(struct service_pool *p, service_id id, const char *name, void *f, void *L);
 int service_setp(struct service_pool *p, service_id id, const char *key, void *value);
 int service_sets(struct service_pool *p, service_id id, const char *key, const char *value);
@@ -57,6 +58,7 @@ void service_write_receipt(struct service_pool *p, service_id id, int receipt, s
 struct message * service_read_receipt(struct service_pool *p, service_id id, int *receipt);
 size_t service_memlimit(struct service_pool *p, service_id id, size_t limit);
 size_t service_memcount(struct service_pool *p, service_id id, int luatype);
-void * service_preinit(void *L, const char *source);
+struct service * service_preinit(void *L, const char *source);
+void * service_preinit_L(struct service *);
 
 #endif
