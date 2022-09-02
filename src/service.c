@@ -44,6 +44,7 @@ struct memory_stat {
 
 struct service {
 	lua_State *L;
+	lua_State *rL;
 	struct queue *msg;
 	struct message *out;
 	struct message *bounce;
@@ -326,6 +327,9 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 		return 1;
 	}
 	S->L = L;
+	S->rL = lua_newthread(L);
+	luaL_ref(L, LUA_REGISTRYINDEX);
+
 	return 0;
 }
 
@@ -360,11 +364,11 @@ require_cmodule(lua_State *L) {
 int
 service_requiref(struct service_pool *p, service_id id, const char *name, void *f, void *pL) {
 	struct service *S = get_service(p, id);
-	if (S == NULL || S->L == NULL) {
+	if (S == NULL || S->rL == NULL) {
 		error_message(NULL, pL, "requiref : No service");
 		return 1;
 	}
-	lua_State *L = S->L;
+	lua_State *L = S->rL;
 	lua_pushcfunction(L, require_cmodule);
 	lua_pushlightuserdata(L, (void *)name);
 	lua_pushlightuserdata(L, f);
@@ -387,9 +391,9 @@ setp(lua_State *L) {
 int
 service_setp(struct service_pool *p, service_id id, const char *key, void *value) {
 	struct service *S = get_service(p, id);
-	if (S == NULL || S->L == NULL)
+	if (S == NULL || S->rL == NULL)
 		return 1;
-	lua_State *L = S->L;
+	lua_State *L = S->rL;
 	lua_pushcfunction(L, setp);
 	lua_pushlightuserdata(L, (void *)key);
 	lua_pushlightuserdata(L, value);
@@ -412,9 +416,9 @@ sets(lua_State *L) {
 int
 service_sets(struct service_pool *p, service_id id, const char *key, const char *value) {
 	struct service *S = get_service(p, id);
-	if (S == NULL || S->L == NULL)
+	if (S == NULL || S->rL == NULL)
 		return 1;
-	lua_State *L = S->L;
+	lua_State *L = S->rL;
 	lua_pushcfunction(L, sets);
 	lua_pushlightuserdata(L, (void *)key);
 	lua_pushlightuserdata(L, (void *)value);
