@@ -208,7 +208,7 @@ ltask.signal_handler(signal_handler)
 
 local function init()
 	local request = ltask.request()
-	for i, t in ipairs(config.exclusive) do
+	for i, t in ipairs(config.exclusive or {}) do
 		local name, args
 		if type(t) == "table" then
 			name = table.remove(t, 1)
@@ -228,7 +228,7 @@ local function init()
 			exclusive = true,
 		}}
 	end
-	for i, name in ipairs(config.preinit) do
+	for i, name in ipairs(config.preinit or {}) do
 		local id = i + #config.exclusive + 1
 		register_service(id, name)
 		request:add { id, proto = "system", "init", {
