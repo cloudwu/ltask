@@ -228,6 +228,15 @@ local function init()
 			exclusive = true,
 		}}
 	end
+	for i, name in ipairs(config.preinit) do
+		local id = i + #config.exclusive + 1
+		register_service(id, name)
+		request:add { id, proto = "system", "init", {
+			lua_path = config.lua_path,
+			lua_cpath = config.lua_cpath,
+			exclusive = true,
+		}}
+	end
 	for req, resp in request:select() do
 		if not resp then
 			print(string.format("exclusive %d init error: %s", req[1], req.error))
