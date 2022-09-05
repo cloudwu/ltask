@@ -917,6 +917,8 @@ function ltask.schedule_message()
 	return SCHEDULE_SUCCESS
 end
 
+ltask.dispatch_wakeup = dispatch_wakeup
+
 print = ltask.log
 
 while true do
