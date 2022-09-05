@@ -1,3 +1,5 @@
+local no_loop = ...
+
 local SERVICE_ROOT <const> = 1
 
 local MESSAGE_SYSTEM <const> = 0
@@ -821,22 +823,27 @@ end
 
 function sys_service.init(t)
 	-- The first system message
-	assert(service == nil)
 	if t.lua_path then
 		package.path = t.lua_path
 	end
 	if t.lua_cpath then
 		package.cpath = t.lua_cpath
 	end
-	local filename = assert(package.searchpath(t.name, t.service_path))
-	local f = assert(loadfile(filename))
 	_G.require = yieldable_require
-	if t.exclusive then
-		init_exclusive()
-	end
-	local r = f(table.unpack(t.args))
-	if service == nil then
-		service = r
+	if t.name then
+		local filename = assert(package.searchpath(t.name, t.service_path))
+		local f = assert(loadfile(filename))
+		if t.exclusive then
+			init_exclusive()
+		end
+		local r = f(table.unpack(t.args))
+		if service == nil then
+			service = r
+		end
+	else
+		if t.exclusive then
+			init_exclusive()
+		end
 	end
 	if service == nil then
 		ltask.quit()
@@ -919,12 +926,17 @@ end
 
 print = ltask.log
 
-while true do
-	local s = ltask.schedule_message()
-	if s == SCHEDULE_QUIT then
-		break
+local function mainloop()
+	while true do
+		local s = ltask.schedule_message()
+		if s == SCHEDULE_QUIT then
+			ltask.log "${quit}"
+			return
+		end
+		yield_service()
 	end
-	yield_service()
 end
 
-ltask.log "${quit}"
+if not no_loop then
+	mainloop()
+end
