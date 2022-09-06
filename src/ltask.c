@@ -1,5 +1,7 @@
 #define LUA_LIB
 
+#define DEBUGLOG
+
 #include "sockevent.h"
 
 #include <lua.h>
@@ -257,7 +259,8 @@ schedule_dispatch(struct ltask *task) {
 
 	for (i=0;i<done_job_n;i++) {
 		service_id id = done_job[i];
-		if (service_status_get(P, id) == SERVICE_STATUS_DEAD) {
+		int status = service_status_get(P, id);
+		if (status == SERVICE_STATUS_DEAD) {
 			struct message *msg = service_message_out(P, id);
 			assert(msg && msg->to.id == SERVICE_ID_ROOT && msg->type == MESSAGE_SIGNAL);
 			switch (service_push_message(P, msg->to, msg)) {
@@ -280,7 +283,10 @@ schedule_dispatch(struct ltask *task) {
 			if (msg) {
 				dispatch_out_message(task, id, msg);
 			}
-			if (!service_has_message(P, id)) {
+			if (status == SERVICE_STATUS_RESUME) {
+				debug_printf(task->logger, "Service %x is restore", id.id);
+				service_restore(P, id);
+			} else if (!service_has_message(P, id)) {
 				debug_printf(task->logger, "Service %x is idle", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
@@ -425,17 +431,19 @@ thread_worker(void *ud) {
 				debug_printf(w->logger, "Run service %x", id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
-					debug_printf(w->logger, "Service %x quit", id.id);
-					service_status_set(P, id, SERVICE_STATUS_DEAD);
-					if (id.id == SERVICE_ID_ROOT) {
-						debug_printf(w->logger, "Root quit");
-						// root quit, wakeup others
-						quit_all_workers(w->task);
-						quit_all_exclusives(w->task);
-						wakeup_all_workers(w->task);
-						break;
-					} else {
-						service_send_signal(P, id);
+					if (service_status_get(P, id) != SERVICE_STATUS_RESUME) {
+						debug_printf(w->logger, "Service %x quit", id.id);
+						service_status_set(P, id, SERVICE_STATUS_DEAD);
+						if (id.id == SERVICE_ID_ROOT) {
+							debug_printf(w->logger, "Root quit");
+							// root quit, wakeup others
+							quit_all_workers(w->task);
+							quit_all_exclusives(w->task);
+							wakeup_all_workers(w->task);
+							break;
+						} else {
+							service_send_signal(P, id);
+						}
 					}
 				} else {
 					service_status_set(P, id, SERVICE_STATUS_DONE);
@@ -753,6 +761,7 @@ struct preload_thread {
 	void *thread;
 	struct service *service;
 	atomic_int term;
+	struct ltask *task;
 };
 
 static void
@@ -806,6 +815,7 @@ preinit_thread(void *args) {
 			int r = lua_resume(L, NULL, 1, &result);
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
+					struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
 					debug_printf(task->logger, "preinit error : %s", lua_tostring(L, -1));
 				}
 				L = NULL;
@@ -1354,6 +1364,43 @@ ltask_touch_service(lua_State *L) {
 	return 0;
 }
 
+static int
+ltask_suspend(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TTHREAD);
+	lua_State *sL = lua_tothread(L, 1);
+	const struct service_ud *S = getS(L);
+	struct cond * cp = service_suspend(S->task->services, S->id, sL);
+	if (cp == NULL) {
+		return luaL_error(L, "Already suspend");
+	}
+
+	debug_printf(S->task->logger, "Service %x is suspend", S->id.id);
+
+	cond_wait_begin(cp);
+		schedule_back(S->task, S->id);
+		cond_wait(cp);
+	cond_wait_end(cp);
+
+	cond_release(cp);
+
+	if (lua_status(sL) != LUA_OK) {
+		lua_xmove(sL, L, 1);
+		return lua_error(L);
+	}
+
+	return 0;
+}
+
+static int
+ltask_resume(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	if (!service_is_suspend(S->task->services, S->id)) {
+		return luaL_error(L, "Not suspend");
+	}
+	service_status_set(S->task->services, S->id, SERVICE_STATUS_RESUME);
+	return 0;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1365,6 +1412,8 @@ luaopen_ltask(lua_State *L) {
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
 		{ "touch_service", ltask_touch_service },
+		{ "thread_suspend", ltask_suspend },
+		{ "thread_resume", ltask_resume },
 		{ "message_receipt", lmessage_receipt },
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },

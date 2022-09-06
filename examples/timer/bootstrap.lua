@@ -23,6 +23,8 @@ for req, resp in req:select(25) do
 	end
 end
 
+ltask.call(addr, "suspend")
+
 local se =ltask.queryservice "sockevent"
 print("PING sockevent", se)
 print(ltask.call(se , "ping", "PONG"))

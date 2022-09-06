@@ -3,6 +3,8 @@
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 
+#include <windows.h>
+
 struct cond {
     CONDITION_VARIABLE c;
     CRITICAL_SECTION lock;

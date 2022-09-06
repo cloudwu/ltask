@@ -2,6 +2,7 @@
 #include "queue.h"
 #include "config.h"
 #include "message.h"
+#include "cond.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -45,6 +46,7 @@ struct memory_stat {
 struct service {
 	lua_State *L;
 	lua_State *rL;
+	lua_State *sL;
 	struct queue *msg;
 	struct message *out;
 	struct message *bounce;
@@ -53,6 +55,7 @@ struct service {
 	int thread_id;
 	service_id id;
 	char label[32];
+	struct cond cp;
 	struct memory_stat stat;
 };
 
@@ -163,6 +166,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 		return result;
 	s->L = NULL;
 	s->rL = NULL;
+	s->sL = NULL;
 	s->msg = NULL;
 	s->out = NULL;
 	s->bounce = NULL;
@@ -517,6 +521,38 @@ service_loadstring(struct service_pool *p, service_id id, const char *source) {
 	return NULL;
 }
 
+struct cond *
+service_suspend(struct service_pool *p, service_id id, void *L) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return NULL;
+	if (S->sL != NULL)
+		return NULL;
+	S->sL = S->L;
+	S->L = (lua_State *)L;
+	cond_create(&S->cp);
+	return &S->cp;
+}
+
+int
+service_is_suspend(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return 0;
+	return (S->sL != NULL);
+}
+
+void
+service_restore(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL || S->sL == NULL || S->status != SERVICE_STATUS_RESUME)
+		return;
+	S->L = S->sL;
+	S->sL = NULL;
+	cond_trigger_begin(&S->cp);
+	cond_trigger_end(&S->cp, 1);
+}
+
 int
 service_resume(struct service_pool *p, service_id id, int thread_id) {
 	struct service *S= get_service(p, id);
@@ -535,15 +571,15 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	if (r == LUA_OK) {
 		return 1;
 	}
-	if (!lua_checkstack(L, LUA_MINSTACK)) {
-		lua_writestringerror("%s\n", lua_tostring(L, -1));
-		lua_pop(L, 1);
-		return 1;
-	}
-	lua_pushfstring(L, "Service %d error: %s", id.id, lua_tostring(L, -1));
-	luaL_traceback(L, L, lua_tostring(L, -1), 0);
+//	if (!lua_checkstack(L, LUA_MINSTACK)) {
+//		lua_writestringerror("%s\n", lua_tostring(L, -1));
+//		lua_pop(L, 1);
+//		return 1;
+//	}
+//	lua_pushfstring(L, "Service %d error: %s", id.id, lua_tostring(L, -1));
+//	luaL_traceback(L, L, lua_tostring(L, -1), 0);
 	lua_writestringerror("%s\n", lua_tostring(L, -1));
-	lua_pop(L, 3);
+//	lua_pop(L, 3);
 	return 1;
 }
 

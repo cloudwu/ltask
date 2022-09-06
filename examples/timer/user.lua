@@ -28,4 +28,12 @@ function S.exit()
 	ltask.quit()
 end
 
+function S.suspend()
+	ltask.run(function()
+		print("Suspend Begin\n")
+		ltask.sleep(10)
+		print("Suspend End\n")
+	end)
+end
+
 return S

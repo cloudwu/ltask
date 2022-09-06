@@ -15,11 +15,13 @@
 #define SERVICE_STATUS_DONE 4
 #define SERVICE_STATUS_DEAD 5
 #define SERVICE_STATUS_EXCLUSIVE 6
+#define SERVICE_STATUS_RESUME 7
 
 struct service_pool;
 struct ltask_config;
 struct message;
 struct service;
+struct cond;
 
 typedef struct {
 	unsigned int id;
@@ -60,5 +62,8 @@ size_t service_memlimit(struct service_pool *p, service_id id, size_t limit);
 size_t service_memcount(struct service_pool *p, service_id id, int luatype);
 struct service * service_preinit(void *L, const char *source);
 void * service_preinit_L(struct service *);
+struct cond * service_suspend(struct service_pool *p, service_id id, void *L);
+int service_is_suspend(struct service_pool *p, service_id id);
+void service_restore(struct service_pool *p, service_id id);
 
 #endif

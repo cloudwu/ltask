@@ -928,6 +928,27 @@ ltask.dispatch_wakeup = dispatch_wakeup
 
 print = ltask.log
 
+function ltask.run(f)
+	local quit_thread
+	local ok, err
+	ltask.fork(function()
+		ok, err = pcall(f)
+		quit_thread = true
+	end)
+	ltask.thread_suspend(coroutine.create(function()
+		while true do
+			ltask.schedule_message()
+			if quit_thread then
+				ltask.thread_resume()
+				return
+			end
+			yield_service()
+		end
+	end))
+	running_thread = coroutine.running()
+	assert(ok, err)
+end
+
 local function mainloop()
 	while true do
 		local s = ltask.schedule_message()

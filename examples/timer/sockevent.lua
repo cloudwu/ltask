@@ -8,7 +8,7 @@ ltask.on_idle = waitfunc
 local S = {}
 
 function S.ping(...)
-	io.write("PING SOCK\n")
+	print "PING SOCK"
 	return ...
 end
 
