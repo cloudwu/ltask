@@ -1,5 +1,7 @@
 #define LUA_LIB
 
+#include "sockevent.h"
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <assert.h>
@@ -46,6 +48,7 @@ struct exclusive_thread {
 	int thread_id;
 	int term_signal;
 	service_id service;
+	struct sockevent event;
 };
 
 struct ltask {
@@ -70,11 +73,11 @@ struct service_ud {
 	service_id id;
 };
 
-struct queue *
-get_exclusive_thread_sending(struct ltask *task, int thread_id) {
+struct exclusive_thread *
+get_exclusive_thread(struct ltask *task, int thread_id) {
 	if (thread_id < 0 && thread_id >= MAX_EXCLUSIVE)
 		return NULL;
-	return task->exclusives[thread_id].sending;
+	return &task->exclusives[thread_id];
 }
 
 static inline void
@@ -132,6 +135,23 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 }
 
 static void
+check_message_to(struct ltask *task, service_id to) {
+	struct service_pool *P = task->services;
+	int status = service_status_get(P, to);
+	if (status == SERVICE_STATUS_IDLE) {
+		debug_printf(task->logger, "Service %x is in schedule", to.id);
+		service_status_set(P, to, SERVICE_STATUS_SCHEDULE);
+		schedule_back(task, to);
+	} else if (status == SERVICE_STATUS_EXCLUSIVE) {
+		debug_printf(task->logger, "Message to exclusive service %d", to.id);
+		int ethread = service_thread_id(task->services, to);
+		struct exclusive_thread *thr = get_exclusive_thread(task, ethread);
+		assert(thr);
+		sockevent_trigger(&thr->event);
+	}
+}
+
+static void
 dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 	debug_printf(task->logger, "Message from %d to %d type=%d", id.id, msg->to.id, msg->type);
 	struct service_pool *P = task->services;
@@ -150,12 +170,7 @@ dispatch_out_message(struct ltask *task, service_id id, struct message *msg) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 			break;
 		}
-		int status = service_status_get(P, msg->to);
-		if (status == SERVICE_STATUS_IDLE) {
-			debug_printf(task->logger, "Service %x is back to schedule", msg->to.id);
-			service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
-			schedule_back(task, msg->to);
-		}
+		check_message_to(task, msg->to);
 	}
 }
 
@@ -204,11 +219,7 @@ dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 			// msg->to is not blocked before
 			switch (service_push_message(P, msg->to, msg)) {
 			case 0 :	// succ
-				if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-					debug_printf(e->logger, "Service %x is in schedule", msg->to.id);
-					service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
-					schedule_back(task, msg->to);
-				}
+				check_message_to(task, msg->to);
 				break;
 			case 1 :	// block, push back
 				queue_push_ptr(sending, msg);
@@ -253,11 +264,7 @@ schedule_dispatch(struct ltask *task) {
 			case 0 :
 				// succ
 				debug_printf(task->logger, "Signal %x dead to root", id.id);
-				if (service_status_get(P, msg->to) == SERVICE_STATUS_IDLE) {
-					debug_printf(task->logger, "Service root is in schedule");
-					service_status_set(P, msg->to, SERVICE_STATUS_SCHEDULE);
-					schedule_back(task, msg->to);
-				}
+				check_message_to(task, msg->to);
 				break;
 			case 1 :
 				debug_printf(task->logger, "Root service is blocked, Service %x tries to signal it later", id.id);
@@ -394,6 +401,7 @@ quit_all_exclusives(struct ltask *task) {
 	int i;
 	for (i=0;i<MAX_EXCLUSIVE;i++) {
 		task->exclusives[i].term_signal = 1;
+		sockevent_trigger(&task->exclusives[i].event);
 	}
 }
 
@@ -516,6 +524,7 @@ thread_exclusive(void *ud) {
 	}
 	debug_printf(e->logger, "Quit");
 	atomic_int_dec(&e->task->thread_count);
+	sockevent_close(&e->event);
 }
 
 static int
@@ -573,6 +582,7 @@ ltask_init(lua_State *L) {
 	for (i=0;i<MAX_EXCLUSIVE;i++) {
 		task->exclusives[i].task = NULL;
 		task->exclusives[i].sending = NULL;
+		sockevent_init(&task->exclusives[i].event);
 	}
 
 	return 1;
@@ -627,9 +637,6 @@ ltask_exclusive(lua_State *L) {
 	e->service.id = luaL_checkinteger(L, 1);
 	if (service_status_get(task->services, e->service) != SERVICE_STATUS_IDLE) {
 		return luaL_error(L, "Service is uninitialized");
-	}
-	if (service_setp(task->services, e->service, "EXCLUSIVE_HANDLE", e)) {
-		return luaL_error(L, "set EXCLUSIVE_HANDLE fail");
 	}
 	if (service_requiref(task->services, e->service, "ltask.exclusive", luaopen_ltask_exclusive, L)) {
 		return luaL_error(L, "require ltask.exclusive fail : %s", get_error_message(L));
@@ -896,11 +903,7 @@ lpost_message(lua_State *L) {
 		message_delete(m);
 		return luaL_error(L, "push message failed");
 	}
-	if (service_status_get(task->services, msg.to) == SERVICE_STATUS_IDLE) {
-		debug_printf(task->logger, "Service %x is in schedule", msg.to.id);
-		service_status_set(task->services, msg.to, SERVICE_STATUS_SCHEDULE);
-		schedule_back(task, msg.to);
-	}
+	check_message_to(task, msg.to);
 	return 0;
 }
 
@@ -944,6 +947,11 @@ ltask_boot_pushlog(lua_State *L) {
 	return 0;
 }
 
+static int
+ltask_init_socket(lua_State *L) {
+	sockevent_initsocket();
+	return 0;
+}
 
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
@@ -961,6 +969,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "new_service", ltask_newservice },
 		{ "init_timer", ltask_init_timer },
 		{ "init_root", ltask_init_root },
+		{ "init_socket", ltask_init_socket },
 		{ "pushlog", ltask_boot_pushlog },
 		{ "preinit", ltask_preinit },
 		{ "new_service_preinit", ltask_newservice_preinit },
@@ -1065,10 +1074,12 @@ lexclusive_timer_update(lua_State *L) {
 	}
 
 	int ethread = service_thread_id(S->task->services, S->id);
-	struct queue *q = get_exclusive_thread_sending(S->task, ethread);
+	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
+	if (thr == NULL)
+		return luaL_error(L, "Not in exclusive service");
 	struct timer_execute te;
 	te.L = L;
-	te.sending = q;
+	te.sending = thr->sending;
 	te.blocked = 0;
 	te.from = S->id;
 
@@ -1127,11 +1138,11 @@ static int
 lexclusive_send_message(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	int ethread = service_thread_id(S->task->services, S->id);
-	struct queue *q = get_exclusive_thread_sending(S->task, ethread);
-	if (q == NULL)
+	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
+	if (thr == NULL)
 		return luaL_error(L, "%d is not in exclusive thread", S->id.id);
 	struct message *msg = gen_send_message(L, S->id);
-	if (queue_push_ptr(q, msg)) {
+	if (queue_push_ptr(thr->sending, msg)) {
 		// sending queue is full
 		msg->msg = NULL;
 		msg->sz = 0;
@@ -1364,12 +1375,41 @@ luaopen_ltask(lua_State *L) {
 }
 
 static int
-lexclusive_scheduling(lua_State *L) {
-	if (lua_getfield(L, LUA_REGISTRYINDEX, "EXCLUSIVE_HANDLE") != LUA_TLIGHTUSERDATA)
-		return luaL_error(L, "Not in exclusive service");
+lexclusive_eventwait_(lua_State *L) {
+	struct exclusive_thread *e = (struct exclusive_thread *)lua_touserdata(L, lua_upvalueindex(1));
+	sockevent_wait(&e->event);
+	return 0;
+}
 
+static struct exclusive_thread *
+exclusive_ud(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	int ethread = service_thread_id(S->task->services, S->id);
+	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
+	if (thr == NULL)
+		luaL_error(L, "Not in exclusive service");
+	lua_pushlightuserdata(L, (void *)thr);
+	return thr;
+}
+
+static int
+lexclusive_scheduling(lua_State *L) {
+	exclusive_ud(L);
 	lua_pushcclosure(L, lexclusive_scheduling_, 1);
 	return 1;
+}
+
+static int
+lexclusive_eventinit(lua_State *L) {
+	struct exclusive_thread *thr = exclusive_ud(L);
+	lua_pushcclosure(L, lexclusive_eventwait_, 1);
+
+	if (sockevent_open(&thr->event) != 0) {
+		return luaL_error(L, "Create sockevent fail");
+	}
+	lua_pushlightuserdata(L, (void *)sockevent_fd(&thr->event));
+
+	return 2;
 }
 
 LUAMOD_API int
@@ -1380,6 +1420,7 @@ luaopen_ltask_exclusive(lua_State *L) {
 		{ "timer_update", lexclusive_timer_update },
 		{ "sleep", lexclusive_sleep },
 		{ "scheduling", lexclusive_scheduling },
+		{ "eventinit", lexclusive_eventinit },
 		{ NULL, NULL },
 	};
 

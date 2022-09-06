@@ -934,6 +934,11 @@ local function mainloop()
 		if s == SCHEDULE_QUIT then
 			ltask.log "${quit}"
 			return
+		elseif s == SCHEDULE_IDLE then
+			local onidle = ltask.on_idle
+			if onidle then
+				onidle()
+			end
 		end
 		yield_service()
 	end

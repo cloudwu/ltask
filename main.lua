@@ -63,6 +63,7 @@ init_config()
 boot.init(config)
 local _ <close> = toclose(boot.deinit)
 boot.init_timer()
+boot.init_socket()
 
 local id = 0
 for i, t in ipairs(config.exclusive) do
