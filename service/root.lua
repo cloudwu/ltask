@@ -106,7 +106,7 @@ local function register_service(address, name)
 	anonymous_services[address] = nil
 	named_services[#named_services+1] = name
 	named_services[name] = address
-	multi_wakeup("query."..name, address)
+	multi_wakeup("unique."..name, address)
 end
 
 function S.report_error(addr, session, errobj)
@@ -138,8 +138,10 @@ function S.queryservice(name)
 	if address then
 		return address
 	end
-	return multi_wait("query."..name)
+	return multi_wait("unique."..name)
 end
+
+local unique = {}
 
 function S.uniqueservice(name, ...)
 	local address = named_services[name]
@@ -147,15 +149,16 @@ function S.uniqueservice(name, ...)
 		return address
 	end
 	local key = "unique."..name
-	if not tokenmap[key] then
+	if not unique[key] then
+		unique[key] = true
 		ltask.fork(function (...)
 			local addr, err = new_service(name, ...)
 			if not addr then
 				multi_interrupt(key, err)
 			else
 				register_service(addr, name)
-				multi_wakeup(key, addr)
 			end
+			unique[key] = nil
 		end, ...)
 	end
 	return multi_wait(key)
@@ -207,6 +210,7 @@ end
 ltask.signal_handler(signal_handler)
 
 local function init()
+	local namemap = {}
 	local request = ltask.request()
 	for i, t in ipairs(config.exclusive or {}) do
 		local name, args
@@ -218,7 +222,7 @@ local function init()
 			args = {}
 		end
 		local id = i + 1
-		register_service(id, name)
+		namemap[id] = name
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
@@ -230,7 +234,7 @@ local function init()
 	end
 	for i, name in ipairs(config.preinit or {}) do
 		local id = i + #config.exclusive + 1
-		register_service(id, name)
+		namemap[id] = name
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
@@ -238,10 +242,14 @@ local function init()
 		}}
 	end
 	for req, resp in request:select() do
+		local addr = req[1]
+		local name = namemap[req[1]]
 		if not resp then
-			print(string.format("exclusive %d init error: %s", req[1], req.error))
+			multi_interrupt("unique."..name, req.error)
+			print(string.format("exclusive %d init error: %s", addr, req.error))
 			return
 		end
+		register_service(addr, name)
 	end
 	S.uniqueservice(table.unpack(config.logger))
 	return true
