@@ -931,13 +931,16 @@ print = ltask.log
 local function mainloop()
 	while true do
 		local s = ltask.schedule_message()
-		if s == SCHEDULE_QUIT then
-			ltask.log "${quit}"
-			return
-		elseif s == SCHEDULE_IDLE then
-			local onidle = ltask.on_idle
-			if onidle then
-				onidle()
+		if s ~= SCHEDULE_SUCCESS then
+			if s == SCHEDULE_IDLE then
+				local onidle = ltask.on_idle
+				if onidle then
+					onidle()
+				end
+			else
+				-- s == SCHEDULE_QUIT
+				ltask.log "${quit}"
+				return
 			end
 		end
 		yield_service()
