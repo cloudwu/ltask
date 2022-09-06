@@ -1,12 +1,12 @@
 #ifndef ltask_sockevent_h
 #define ltask_sockevent_h
 
-#include "atomic.h"
 #include <string.h>
 
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 
 #include <winsock2.h>
+#include <windows.h>
 #include <ws2tcpip.h>
 
 typedef SOCKET socket_t;
@@ -42,6 +42,8 @@ none_blocking_(socket_t fd) {
 static inline void sockevent_initsocket() {}
 
 #endif
+
+#include "atomic.h"
 
 struct sockevent {
 	socket_t pipe[2];
