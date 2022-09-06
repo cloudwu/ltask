@@ -1341,6 +1341,19 @@ ltask_label(lua_State *L) {
 	return 1;
 }
 
+static int
+ltask_touch_service(lua_State *L) {
+	int id = luaL_checkinteger(L, 1);
+	service_id to = { id };
+	const struct service_ud *S = getS(L);
+	int ethread = service_thread_id(S->task->services, to);
+	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
+	if (thr == NULL)
+		return luaL_error(L, "%d is not an exclusive service", id);
+	sockevent_trigger(&thr->event);
+	return 0;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1351,6 +1364,7 @@ luaopen_ltask(lua_State *L) {
 		{ "unpack_remove", luaseri_unpack_remove },
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
+		{ "touch_service", ltask_touch_service },
 		{ "message_receipt", lmessage_receipt },
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
