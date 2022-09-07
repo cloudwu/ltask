@@ -1158,15 +1158,21 @@ lsend_message_direct(lua_State *L) {
 		return luaL_error(L, "Not in worker thread");
 	while (!acquire_scheduler(w)) {}
 
-	if (service_push_message(task->services, msg->to, msg)) {
+	int r = service_push_message(task->services, msg->to, msg);
+	if (r) {
 		release_scheduler(w);
 		message_delete(msg);
-		lua_pushboolean(L, 0);
+		if (r > 0) {
+			r = MESSAGE_RECEIPT_BLOCK;
+		} else {
+			r = MESSAGE_RECEIPT_ERROR;
+		}
+		lua_pushinteger(L, r);
 		return 1;
 	}
 	check_message_to(task, msg->to);
 	release_scheduler(w);
-	lua_pushboolean(L, 1);
+	lua_pushinteger(L, MESSAGE_RECEIPT_DONE);
 	return 1;
 }
 

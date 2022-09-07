@@ -407,7 +407,15 @@ function ltask.send(address, ...)
 end
 
 function ltask.send_direct(address, ...)
-	return ltask.send_message_direct(address, 0, MESSAGE_REQUEST, ltask.pack(...))
+	local r = ltask.send_message_direct(address, 0, MESSAGE_REQUEST, ltask.pack(...))
+	if r == RECEIPT_DONE then
+		return
+	elseif r == RECEIPT_ERROR then
+		error(string.format("${service:%d} is dead", address))
+	else
+		-- r == RECEIPT_BLOCK
+		error(string.format("${service:%d} is blocked", address))
+	end
 end
 
 function ltask.syscall(address, ...)
