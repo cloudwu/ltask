@@ -814,6 +814,7 @@ preinit_thread(void *args) {
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
 					struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
+					(void)task;
 					debug_printf(task->logger, "preinit error : %s", lua_tostring(L, -1));
 				}
 				L = NULL;
