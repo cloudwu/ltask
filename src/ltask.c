@@ -80,6 +80,15 @@ get_exclusive_thread(struct ltask *task, int thread_id) {
 	return &task->exclusives[thread_id];
 }
 
+struct worker_thread *
+get_worker_thread(struct ltask * task, int thread_id) {
+	thread_id -= MAX_EXCLUSIVE;
+	if (thread_id < 0 && thread_id >= task->config->worker) {
+		return NULL;
+	}
+	return &task->workers[thread_id];
+}
+
 static inline void
 schedule_back(struct ltask *task, service_id id) {
 	int r = queue_push_int(task->schedule, (int)id.id);
@@ -1138,6 +1147,30 @@ lsend_message(lua_State *L) {
 }
 
 static int
+lsend_message_direct(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	struct message *msg = gen_send_message(L, S->id);
+	struct ltask * task = S->task;
+
+	int thread = service_thread_id(task->services, S->id);
+	struct worker_thread  *w = get_worker_thread(task, thread);
+	if (w == NULL)
+		return luaL_error(L, "Not in worker thread");
+	while (!acquire_scheduler(w)) {}
+
+	if (service_push_message(task->services, msg->to, msg)) {
+		release_scheduler(w);
+		message_delete(msg);
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	check_message_to(task, msg->to);
+	release_scheduler(w);
+	lua_pushboolean(L, 1);
+	return 1;
+}
+
+static int
 lexclusive_send_message(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	int ethread = service_thread_id(S->task->services, S->id);
@@ -1366,6 +1399,7 @@ luaopen_ltask(lua_State *L) {
 		{ "remove", luaseri_remove },
 		{ "unpack_remove", luaseri_unpack_remove },
 		{ "send_message", lsend_message },
+		{ "send_message_direct", lsend_message_direct },
 		{ "recv_message", lrecv_message },
 		{ "touch_service", ltask_touch_service },
 		{ "message_receipt", lmessage_receipt },

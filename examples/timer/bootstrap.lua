@@ -27,7 +27,7 @@ local se =ltask.queryservice "sockevent"
 print("PING sockevent", se)
 print(ltask.call(se , "ping", "PONG"))
 print(ltask.call(addr, "ping", "PONG"))
-print(ltask.send(addr, "ping", "SEND"))
+print(ltask.send_direct(addr, "ping", "SEND"))
 ltask.send(addr, "exit")
 print(ltask.send(addr, "ping", "SEND"))
 
