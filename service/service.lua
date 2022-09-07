@@ -935,6 +935,7 @@ function ltask.run(f)
 		result = table.pack(pcall(f))
 		quit_thread = true
 	end)
+	local co = running_thread
 	ltask.thread_suspend(coroutine.create(function()
 		while true do
 			ltask.schedule_message()
@@ -945,7 +946,7 @@ function ltask.run(f)
 			yield_service()
 		end
 	end))
-	running_thread = coroutine.running()
+	running_thread = co
 	if result[1] then
 		return table.unpack(result, 2, result.n)
 	else
