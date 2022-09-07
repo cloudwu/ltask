@@ -1,7 +1,5 @@
 #define LUA_LIB
 
-#define DEBUGLOG
-
 #include "sockevent.h"
 
 #include <lua.h>
