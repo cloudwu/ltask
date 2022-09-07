@@ -930,9 +930,9 @@ print = ltask.log
 
 function ltask.run(f)
 	local quit_thread
-	local ok, err
+	local result
 	ltask.fork(function()
-		ok, err = pcall(f)
+		result = table.pack(pcall(f))
 		quit_thread = true
 	end)
 	ltask.thread_suspend(coroutine.create(function()
@@ -946,7 +946,11 @@ function ltask.run(f)
 		end
 	end))
 	running_thread = coroutine.running()
-	assert(ok, err)
+	if result[1] then
+		return table.unpack(result, 2, result.n)
+	else
+		error(result[2])
+	end
 end
 
 local function mainloop()

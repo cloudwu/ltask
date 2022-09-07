@@ -29,11 +29,13 @@ function S.exit()
 end
 
 function S.suspend()
-	ltask.run(function()
+	local a,b,c = ltask.run(function()
 		print("Suspend Begin\n")
 		ltask.sleep(10)
 		print("Suspend End\n")
+		return 1,2,3
 	end)
+	assert(a == 1 and b == 2 and c == 3)
 end
 
 return S
