@@ -298,7 +298,6 @@ schedule_dispatch(struct ltask *task) {
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
 				debug_printf(task->logger, "Service %x back to schedule", id.id);
-				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
 				schedule_back(task, id);
 			}
 		}
@@ -1407,15 +1406,26 @@ ltask_suspend(lua_State *L) {
 	luaL_checktype(L, 1, LUA_TTHREAD);
 	lua_State *sL = lua_tothread(L, 1);
 	const struct service_ud *S = getS(L);
-	struct cond * cp = service_suspend(S->task->services, S->id, sL);
+	struct ltask * task = S->task;
+	struct cond * cp = service_suspend(task->services, S->id, sL);
 	if (cp == NULL) {
 		return luaL_error(L, "Already suspend");
 	}
 
-	debug_printf(S->task->logger, "Service %x is suspend", S->id.id);
+	debug_printf(task->logger, "Service %x is suspend", S->id.id);
+
+	int thread = service_thread_id(task->services, S->id);
+	struct worker_thread  *w = get_worker_thread(task, thread);
+	if (w == NULL)
+		return luaL_error(L, "Not in worker thread");
+
+	service_status_set(task->services, S->id, SERVICE_STATUS_SCHEDULE);
 
 	cond_wait_begin(cp);
-		schedule_back(S->task, S->id);
+		while (!acquire_scheduler(w)) {}
+			schedule_back(S->task, S->id);
+		release_scheduler(w);
+
 		cond_wait(cp);
 	cond_wait_end(cp);
 
