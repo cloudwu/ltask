@@ -80,6 +80,7 @@ end
 local function init_service(address, name, ...)
 	root.init_service(address, name, config.init_service)
 	ltask.syscall(address, "init", {
+		preload = config.preload,
 		lua_path = config.lua_path,
 		lua_cpath = config.lua_cpath,
 		service_path = config.service_path,
@@ -149,8 +150,8 @@ function S.uniqueservice(name, ...)
 		return address
 	end
 	local key = "unique."..name
-	if not unique[key] then
-		unique[key] = true
+	if not unique[name] then
+		unique[name] = true
 		ltask.fork(function (...)
 			local addr, err = new_service(name, ...)
 			if not addr then
@@ -158,7 +159,7 @@ function S.uniqueservice(name, ...)
 			else
 				register_service(addr, name)
 			end
-			unique[key] = nil
+			unique[name] = nil
 		end, ...)
 	end
 	return multi_wait(key)
@@ -223,7 +224,9 @@ local function init()
 		end
 		local id = i + 1
 		namemap[id] = name
+		unique[name] = true
 		request:add { id, proto = "system", "init", {
+			preload = config.preload,
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
 			service_path = config.service_path,
@@ -235,6 +238,7 @@ local function init()
 	for i, name in ipairs(config.preinit or {}) do
 		local id = i + #config.exclusive + 1
 		namemap[id] = name
+		unique[name] = true
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
@@ -244,6 +248,7 @@ local function init()
 	for req, resp in request:select() do
 		local addr = req[1]
 		local name = namemap[req[1]]
+		unique[name] = nil
 		if not resp then
 			multi_interrupt("unique."..name, req.error)
 			print(string.format("exclusive %d init error: %s", addr, req.error))
