@@ -835,13 +835,20 @@ end
 
 function sys_service.init(t)
 	-- The first system message
+	_G.require = yieldable_require
+	if t.preload then
+		if t.preload:sub(1,1) == "@" then
+			assert(loadfile(t.preload:sub(2)))()
+		else
+			assert(load(t.preload))()
+		end
+	end
 	if t.lua_path then
 		package.path = t.lua_path
 	end
 	if t.lua_cpath then
 		package.cpath = t.lua_cpath
 	end
-	_G.require = yieldable_require
 	if t.name then
 		local filename = assert(package.searchpath(t.name, t.service_path))
 		local f = assert(loadfile(filename))
