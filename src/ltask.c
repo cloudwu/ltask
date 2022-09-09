@@ -268,7 +268,8 @@ schedule_dispatch(struct ltask *task) {
 
 	for (i=0;i<done_job_n;i++) {
 		service_id id = done_job[i];
-		if (service_status_get(P, id) == SERVICE_STATUS_DEAD) {
+		int status = service_status_get(P, id);
+		if (status == SERVICE_STATUS_DEAD) {
 			struct message *msg = service_message_out(P, id);
 			assert(msg && msg->to.id == SERVICE_ID_ROOT && msg->type == MESSAGE_SIGNAL);
 			switch (service_push_message(P, msg->to, msg)) {
@@ -291,6 +292,7 @@ schedule_dispatch(struct ltask *task) {
 			if (msg) {
 				dispatch_out_message(task, id, msg);
 			}
+			assert(status == SERVICE_STATUS_DONE);
 			if (!service_has_message(P, id)) {
 				debug_printf(task->logger, "Service %x is idle", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
