@@ -57,6 +57,7 @@ struct ltask {
 	struct exclusive_thread exclusives[MAX_EXCLUSIVE];
 	struct service_pool *services;
 	struct queue *schedule;
+	struct queue *schedule_debug;
 	struct timer *timer;
 #ifdef DEBUGLOG
 	struct debug_logger *logger;
@@ -94,6 +95,7 @@ schedule_back(struct ltask *task, service_id id) {
 	int r = queue_push_int(task->schedule, (int)id.id);
 	// Must succ because task->schedule is large enough.
 	assert(r == 0);
+	queue_push_int(task->schedule_debug, (int)id.id);
 }
 
 static void
@@ -312,6 +314,7 @@ schedule_dispatch(struct ltask *task) {
 				// No job in the queue
 				break;
 			}
+			queue_push_int(task->schedule_debug, -job);
 		}
 		// Todo : record assign history, and try to always assign one job to the same worker.
 		service_id id = { job };
@@ -325,6 +328,7 @@ schedule_dispatch(struct ltask *task) {
 	if (job != 0) {
 		// Push unassigned job back
 		queue_push_int(task->schedule, job);
+		queue_push_int(task->schedule_debug, job);
 	}
 	return assign_job;
 }
@@ -566,6 +570,7 @@ ltask_init(lua_State *L) {
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_WORKERS");
 	task->services = service_create(config);
 	task->schedule = queue_new_int(config->max_service);
+	task->schedule_debug = queue_new_int(0x100000);
 	task->timer = NULL;
 
 #ifdef DEBUGLOG
