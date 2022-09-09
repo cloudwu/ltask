@@ -28,6 +28,8 @@ sockevent_initsocket() {
 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 typedef int socket_t;
 static const socket_t socket_invalid = -1;
@@ -36,7 +38,7 @@ static const socket_t socket_invalid = -1;
 
 static inline int
 none_blocking_(socket_t fd) {
-	return fcntl(socketfd, F_SETFL, fcntl(socketfd, F_GETFL, 0) | O_NONBLOCK);
+	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
 }
 
 static inline void sockevent_initsocket() {}
