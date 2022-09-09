@@ -31,8 +31,6 @@ service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
 int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, struct service *s);
 int service_requiref(struct service_pool *p, service_id id, const char *name, void *f, void *L);
-int service_setp(struct service_pool *p, service_id id, const char *key, void *value);
-int service_sets(struct service_pool *p, service_id id, const char *key, const char *value);
 int service_setlabel(struct service_pool *p, service_id id, const char *label);
 const char * service_getlabel(struct service_pool *p, service_id id);
 // 0 succ

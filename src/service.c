@@ -392,55 +392,6 @@ service_requiref(struct service_pool *p, service_id id, const char *name, void *
 	return 0;
 }
 
-static int
-setp(lua_State *L) {
-	const char * key = (const char *)lua_touserdata(L, 1);
-	lua_settop(L, 2);
-	lua_setfield(L, LUA_REGISTRYINDEX, key);
-	return 0;
-}
-
-int
-service_setp(struct service_pool *p, service_id id, const char *key, void *value) {
-	struct service *S = get_service(p, id);
-	if (S == NULL || S->rL == NULL)
-		return 1;
-	lua_State *L = S->rL;
-	lua_pushcfunction(L, setp);
-	lua_pushlightuserdata(L, (void *)key);
-	lua_pushlightuserdata(L, value);
-	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-		lua_pop(L, 1);
-		return 1;
-	}
-	return 0;
-}
-
-static int
-sets(lua_State *L) {
-	const char * key = (const char *)lua_touserdata(L, 1);
-	const char * value = (const char *)lua_touserdata(L, 2);
-	lua_pushstring(L, value);
-	lua_setfield(L, LUA_REGISTRYINDEX, key);
-	return 0;
-}
-
-int
-service_sets(struct service_pool *p, service_id id, const char *key, const char *value) {
-	struct service *S = get_service(p, id);
-	if (S == NULL || S->rL == NULL)
-		return 1;
-	lua_State *L = S->rL;
-	lua_pushcfunction(L, sets);
-	lua_pushlightuserdata(L, (void *)key);
-	lua_pushlightuserdata(L, (void *)value);
-	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-		lua_pop(L, 1);
-		return 1;
-	}
-	return 0;
-}
-
 int
 service_setlabel(struct service_pool *p, service_id id, const char *label) {
 	struct service *S = get_service(p, id);
