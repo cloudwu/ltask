@@ -1161,7 +1161,7 @@ lsend_message_direct(lua_State *L) {
 	struct worker_thread  *w = get_worker_thread(task, thread);
 	if (w == NULL)
 		return luaL_error(L, "Not in worker thread");
-	while (!acquire_scheduler(w)) {}
+	while (acquire_scheduler(w)) {}
 
 	int r = service_push_message(task->services, msg->to, msg);
 	if (r) {
