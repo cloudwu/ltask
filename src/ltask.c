@@ -436,7 +436,9 @@ thread_worker(void *ud) {
 		if (id.id) {
 			thread_setname(service_getlabel(P, id));
 			w->running = id;
-			if (service_status_get(P, id) != SERVICE_STATUS_DEAD) {
+			int status = service_status_get(P, id);
+			if (status != SERVICE_STATUS_DEAD) {
+				assert(status == SERVICE_STATUS_SCHEDULE);
 				debug_printf(w->logger, "Run service %x", id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
