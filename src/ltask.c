@@ -1464,7 +1464,7 @@ lexclusive_eventinit(lua_State *L) {
 	if (sockevent_open(&thr->event) != 0) {
 		return luaL_error(L, "Create sockevent fail");
 	}
-	lua_pushlightuserdata(L, (void *)sockevent_fd(&thr->event));
+	lua_pushlightuserdata(L, (void *)(intptr_t)sockevent_fd(&thr->event));
 
 	return 2;
 }
