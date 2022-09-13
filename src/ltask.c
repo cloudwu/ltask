@@ -122,21 +122,6 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 		message_delete(msg);
 		service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
 		break;
-	case MESSAGE_SCHEDULE_HANG :
-		if (service_status_get(P, sid) == SERVICE_STATUS_SCHEDULE) {
-			// In schedule
-			debug_printf(task->logger, "Hang up %x and it's already in schedule", sid.id);
-			service_status_set(P, sid, SERVICE_STATUS_DEAD);
-			service_send_signal(P, sid);
-			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
-		} else if (service_hang(P, sid)) {
-			debug_printf(task->logger, "Hang up %x and put it back to schedule", sid.id);
-			schedule_back(task, sid);
-			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
-		} else {
-			service_write_receipt(P, id, MESSAGE_RECEIPT_DONE, NULL);
-		}
-		break;
 	default:
 		service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		break;

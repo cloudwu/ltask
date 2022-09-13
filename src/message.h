@@ -22,7 +22,6 @@ typedef unsigned int session_t;
 // type is MESSAGE_SCHEDULE_* from is the parameter (for DEL service_id).
 #define MESSAGE_SCHEDULE_NEW 0
 #define MESSAGE_SCHEDULE_DEL 1
-#define MESSAGE_SCHEDULE_HANG 2
 
 struct message {
 	service_id from;

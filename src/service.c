@@ -625,22 +625,3 @@ service_send_signal(struct service_pool *p, service_id id) {
 
 	s->out = message_new(&msg);
 }
-
-int
-service_hang(struct service_pool *p, service_id id) {
-	struct service *s = get_service(p, id);
-	if (s == NULL)
-		return 0;
-	switch (s->status) {
-	case SERVICE_STATUS_UNINITIALIZED:
-	case SERVICE_STATUS_IDLE:
-	case SERVICE_STATUS_SCHEDULE:
-		s->status = SERVICE_STATUS_DEAD;
-		service_send_signal(p, id);
-		return 0;
-	case SERVICE_STATUS_DEAD:
-		return 0;
-	}
-	// service is running
-	return 1;
-}

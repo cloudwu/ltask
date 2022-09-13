@@ -833,7 +833,7 @@ local function init_exclusive()
 	end
 end
 
-function sys_service.init(t)
+local function sys_service_init(t)
 	-- The first system message
 	_G.require = yieldable_require
 	if t.preload then
@@ -866,6 +866,14 @@ function sys_service.init(t)
 	end
 	if service == nil then
 		ltask.quit()
+	end
+end
+
+function sys_service.init(t)
+	local ok, err = pcall(sys_service_init, t)
+	if not ok then
+		ltask.quit()
+		error(err)
 	end
 end
 

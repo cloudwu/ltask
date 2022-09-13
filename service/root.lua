@@ -94,7 +94,6 @@ local function new_service(name, ...)
 	anonymous_services[address] = true
 	local ok, err = pcall(init_service, address, name, ...)
 	if not ok then
-		S.kill(address)
 		return nil, err
 	end
 	return address
@@ -120,13 +119,6 @@ function S.spawn(name, ...)
 		error(err)
 	end
 	return address
-end
-
-function S.kill(address)
-	if ltask.post_message(0, address, MESSAGE_SCHEDULE_HANG) then
-		return true
-	end
-	return false
 end
 
 function S.register(name)

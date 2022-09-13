@@ -34,7 +34,6 @@ int service_requiref(struct service_pool *p, service_id id, const char *name, vo
 int service_setlabel(struct service_pool *p, service_id id, const char *label);
 const char * service_getlabel(struct service_pool *p, service_id id);
 // 0 succ
-int service_hang(struct service_pool *p, service_id id);
 void service_send_signal(struct service_pool *p, service_id id);
 void service_close(struct service_pool *p, service_id id);
 void service_delete(struct service_pool *p, service_id id);
