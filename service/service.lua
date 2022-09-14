@@ -469,7 +469,20 @@ end
 
 function ltask.wait(token)
 	token = token or running_thread
+	assert(session_waiting[token] == nil)
 	session_waiting[token] = running_thread
+	session_id = session_id + 1
+	return wait_response(yield_session())
+end
+
+function ltask.multi_wait(token)
+	token = token or running_thread
+	local thr = session_waiting[token]
+	if thr then
+		thr[#thr+1] = running_thread
+	else
+		session_waiting[token] = { running_thread }
+	end
 	session_id = session_id + 1
 	return wait_response(yield_session())
 end
@@ -483,11 +496,36 @@ function ltask.wakeup(token, ...)
 	end
 end
 
+function ltask.multi_wakeup(token, ...)
+	local co = session_waiting[token]
+	if co then
+		local n = #wakeup_queue
+		for i = 1, #co do
+			wakeup_queue[n+i] = {co[i], MESSAGE_RESPONSE, ...}
+		end
+		session_waiting[token] = nil
+		return true
+	end
+end
+
 function ltask.interrupt(token, errobj)
 	local co = session_waiting[token]
 	if co then
 		errobj = traceback(errobj, 4)
 		wakeup_queue[#wakeup_queue+1] = {co, MESSAGE_ERROR, errobj}
+		session_waiting[token] = nil
+		return true
+	end
+end
+
+function ltask.multi_interrupt(token, errobj)
+	local co = session_waiting[token]
+	if co then
+		errobj = traceback(errobj, 4)
+		local n = #wakeup_queue
+		for i = 1, #co do
+			wakeup_queue[n+i] = {co[i], MESSAGE_ERROR, errobj}
+		end
 		session_waiting[token] = nil
 		return true
 	end

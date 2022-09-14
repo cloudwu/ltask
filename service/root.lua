@@ -45,37 +45,9 @@ do
 	ltask.suspend(0, coroutine.create(init_receipt))
 end
 
-local tokenmap = {}
-local function multi_wait(key)
-	local mtoken = tokenmap[key]
-	if not mtoken then
-		mtoken = {}
-		tokenmap[key] = mtoken
-	end
-	local t = {}
-	mtoken[#mtoken+1] = t
-	return ltask.wait(t)
-end
-
-local function multi_wakeup(key, ...)
-	local mtoken = tokenmap[key]
-	if mtoken then
-		tokenmap[key] = nil
-		for _, token in ipairs(mtoken) do
-			ltask.wakeup(token, ...)
-		end
-	end
-end
-
-local function multi_interrupt(key, ...)
-	local mtoken = tokenmap[key]
-	if mtoken then
-		tokenmap[key] = nil
-		for _, token in ipairs(mtoken) do
-			ltask.interrupt(token, ...)
-		end
-	end
-end
+local multi_wait = ltask.multi_wait
+local multi_wakeup = ltask.multi_wakeup
+local multi_interrupt = ltask.multi_interrupt
 
 local function init_service(address, name, ...)
 	root.init_service(address, name, config.init_service)
