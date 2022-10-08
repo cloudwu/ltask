@@ -75,7 +75,7 @@ struct service_ud {
 
 struct exclusive_thread *
 get_exclusive_thread(struct ltask *task, int thread_id) {
-	if (thread_id < 0 && thread_id >= MAX_EXCLUSIVE)
+	if (thread_id < 0 || thread_id >= MAX_EXCLUSIVE)
 		return NULL;
 	return &task->exclusives[thread_id];
 }
@@ -83,7 +83,7 @@ get_exclusive_thread(struct ltask *task, int thread_id) {
 struct worker_thread *
 get_worker_thread(struct ltask * task, int thread_id) {
 	thread_id -= MAX_EXCLUSIVE;
-	if (thread_id < 0 && thread_id >= task->config->worker) {
+	if (thread_id < 0 || thread_id >= task->config->worker) {
 		return NULL;
 	}
 	return &task->workers[thread_id];
@@ -1135,6 +1135,32 @@ lsend_message(lua_State *L) {
 	return 0;
 }
 
+static void
+acquire_scheduler_by_id(struct ltask * task, int thread_id) {
+	if (thread_id < MAX_EXCLUSIVE) {
+		struct exclusive_thread * e = &task->exclusives[thread_id];
+		acquire_scheduler_exclusive(e);
+	} else {
+		thread_id -= MAX_EXCLUSIVE;
+		assert(thread_id < task->config->worker);
+		struct worker_thread *w = &task->workers[thread_id];
+		while (acquire_scheduler(w)) {}
+	}
+}
+
+static void
+release_scheduler_by_id(struct ltask * task, int thread_id) {
+	if (thread_id < MAX_EXCLUSIVE) {
+		struct exclusive_thread * e = &task->exclusives[thread_id];
+		release_scheduler_exclusive(e);
+	} else {
+		thread_id -= MAX_EXCLUSIVE;
+		assert(thread_id < task->config->worker);
+		struct worker_thread *w = &task->workers[thread_id];
+		release_scheduler(w);
+	}
+}
+
 static int
 lsend_message_direct(lua_State *L) {
 	const struct service_ud *S = getS(L);
@@ -1142,14 +1168,13 @@ lsend_message_direct(lua_State *L) {
 	struct ltask * task = S->task;
 
 	int thread = service_thread_id(task->services, S->id);
-	struct worker_thread  *w = get_worker_thread(task, thread);
-	if (w == NULL)
-		return luaL_error(L, "Not in worker thread");
-	while (acquire_scheduler(w)) {}
+	if (thread < 0)
+		return luaL_error(L, "Invalid thread id %d", thread);
+	acquire_scheduler_by_id(task, thread);
 
 	int r = service_push_message(task->services, msg->to, msg);
 	if (r) {
-		release_scheduler(w);
+		release_scheduler_by_id(task, thread);
 		message_delete(msg);
 		if (r > 0) {
 			r = MESSAGE_RECEIPT_BLOCK;
@@ -1160,7 +1185,7 @@ lsend_message_direct(lua_State *L) {
 		return 1;
 	}
 	check_message_to(task, msg->to);
-	release_scheduler(w);
+	release_scheduler_by_id(task, thread);
 	lua_pushinteger(L, MESSAGE_RECEIPT_DONE);
 	return 1;
 }
