@@ -384,7 +384,7 @@ static int
 ref_ancestor(lua_State *L, struct write_block *b, int index) {
 	struct stack *s = &b->s;
 	int n = s->depth;
-	if (n == 0)
+	if (n == 0 || n >= MAX_DEPTH)
 		return 0;
 	int i;
 	const void * obj = lua_topointer(L, index);
@@ -456,10 +456,6 @@ ref_object(lua_State *L, struct write_block *b, int index) {
 static void
 pack_one(lua_State *L, struct write_block *b, int index) {
 	struct stack *s = &b->s;
-	if (s->depth >= MAX_DEPTH) {
-		wb_free(b);
-		luaL_error(L, "serialize can't pack too depth table");
-	}
 	int type = lua_type(L,index);
 	switch(type) {
 	case LUA_TNIL:
@@ -502,7 +498,8 @@ pack_one(lua_State *L, struct write_block *b, int index) {
 			break;
 		if (ref_object(L, b, index))
 			break;
-		s->ancestor[s->depth] = index;
+		if (s->depth < MAX_DEPTH)
+			s->ancestor[s->depth] = index;
 		++s->depth;
 		wb_table(L, b, index);
 		--s->depth;
@@ -642,9 +639,8 @@ unpack_table(lua_State *L, struct read_block *rb, int array_size, int type) {
 		}
 		lua_rawseti(L, s->ref_index, id);
 	}
-	if (s->depth >= MAX_DEPTH)
-		luaL_error(L, "Invalid layer %d", s->depth);
-	s->ancestor[s->depth] = lua_gettop(L);
+	if (s->depth < MAX_DEPTH)
+		s->ancestor[s->depth] = lua_gettop(L);
 	++s->depth;
 	int i;
 	for (i=1;i<=array_size;i++) {
