@@ -55,6 +55,8 @@
 #define BLOCK_SIZE 128
 #define MAX_DEPTH 31
 
+#define MAX_REFERENCE 32
+
 struct block {
 	struct block * next;
 	char buffer[BLOCK_SIZE];
@@ -67,12 +69,18 @@ struct stack {
 	int ancestor[MAX_DEPTH];
 };
 
+struct reference {
+	const void * object;
+	uint8_t * address;
+};
+
 struct write_block {
 	struct block * head;
 	struct block * current;
 	int len;
 	int ptr;
 	struct stack s;
+	struct reference r[MAX_REFERENCE];
 };
 
 struct read_block {
@@ -328,12 +336,33 @@ static inline void
 mark_table(lua_State *L, struct write_block *b, int index) {
 	const void * obj = lua_topointer(L, index);
 	struct stack *s = &b->s;
-	int id = ++s->objectid;
-	lua_pushinteger(L, id);
-	lua_rawsetp(L, s->ref_index, obj);
+	int id = s->objectid++;
 	void *addr = wb_address(b);
-	lua_pushlightuserdata(L, addr);
-	lua_rawseti(L, s->ref_index + 1, id);
+	if (id == MAX_REFERENCE) {
+		lua_createtable(L, 0, MAX_REFERENCE+1);
+		lua_replace(L, s->ref_index);
+		lua_createtable(L, MAX_REFERENCE+1, 0);
+		lua_replace(L, s->ref_index+1);
+		int i;
+		for (i=0;i<MAX_REFERENCE;i++) {
+			lua_pushinteger(L, i+1);
+			lua_rawsetp(L, s->ref_index, b->r[i].object);
+			if (b->r[i].address) {
+				lua_pushlightuserdata(L, (void *)b->r[i].address);
+				lua_rawseti(L, s->ref_index+1, i+1);
+			}
+		}
+	}
+	if (id < MAX_REFERENCE) {
+		b->r[id].object = obj;
+		b->r[id].address = addr;
+	} else {
+		++id;
+		lua_pushinteger(L, id);
+		lua_rawsetp(L, s->ref_index, obj);
+		lua_pushlightuserdata(L, addr);
+		lua_rawseti(L, s->ref_index + 1, id);
+	}
 }
 
 static void
@@ -370,30 +399,56 @@ ref_ancestor(lua_State *L, struct write_block *b, int index) {
 	return 0;
 }
 
+static inline void
+change_mark(uint8_t *tag) {
+	assert((*tag & 0x7) == TYPE_TABLE);
+	*tag = COMBINE_TYPE(TYPE_TABLE_MARK, *tag >> 3);
+}
+
+static inline int
+lookup_ref(lua_State *L, struct write_block *b, const void *obj) {
+	if (b->s.objectid <= MAX_REFERENCE) {
+		int i;
+		for (i=0;i<b->s.objectid;i++) {
+			if (obj == b->r[i].object) {
+				if (b->r[i].address) {
+					change_mark(b->r[i].address);
+					b->r[i].address = NULL;
+				}
+				return i+1;
+			}
+		}
+		return 0;
+	} else {
+		if (lua_rawgetp(L, b->s.ref_index, obj) != LUA_TNUMBER) {
+			lua_pop(L, 1);
+			return 0;
+		}
+		int id = lua_tointeger(L, -1);
+		lua_pop(L, 1);
+		if (lua_rawgeti(L, b->s.ref_index + 1, id) == LUA_TLIGHTUSERDATA) {
+			uint8_t * tag = (uint8_t *)lua_touserdata(L, -1);
+			lua_pop(L, 1);
+			change_mark(tag);
+			lua_pushnil(L);
+			lua_rawseti(L, b->s.ref_index + 1, id);
+		}
+		return id;
+	}
+}
+
 static int
 ref_object(lua_State *L, struct write_block *b, int index) {
-	struct stack *s = &b->s;
 	const void * obj = lua_topointer(L, index);
-	if (lua_rawgetp(L, s->ref_index, obj) != LUA_TNUMBER) {
-		lua_pop(L, 1);
+	int id = lookup_ref(L, b, obj);
+	if (id > 0) {
+		uint8_t n = COMBINE_TYPE(TYPE_REF, EXTEND_NUMBER);
+		wb_push(b, &n, 1);
+		wb_integer(b, id);
+		return 1;
+	} else {
 		return 0;
 	}
-	int id = lua_tointeger(L, -1);
-	lua_pop(L, 1);
-	uint8_t n = COMBINE_TYPE(TYPE_REF, EXTEND_NUMBER);
-	wb_push(b, &n, 1);
-	wb_integer(b, id);
-	if (lua_rawgeti(L, s->ref_index + 1, id) == LUA_TLIGHTUSERDATA) {
-		uint8_t * tag = (uint8_t *)lua_touserdata(L, -1);
-		lua_pop(L, 1);
-		assert((*tag & 0x7) == TYPE_TABLE);
-		*tag = COMBINE_TYPE(TYPE_TABLE_MARK, *tag >> 3);
-		lua_pushnil(L);
-		lua_rawseti(L, s->ref_index + 1, id);
-	} else {
-		lua_pop(L, 1);
-	}
-	return 1;
 }
 
 static void
@@ -462,8 +517,8 @@ pack_from(lua_State *L, struct write_block *b, int from) {
 	int top = lua_gettop(L);
 	int n = top - from;
 	int i;
-	lua_newtable(L);	// for table ref lookup { pointer -> id }
-	lua_newtable(L);	// for table refs array { address, ... }
+	lua_pushnil(L);	// slot for table ref lookup { pointer -> id }
+	lua_pushnil(L);	// slot for table refs array { address, ... }
 	b->s.ref_index = top + 1;
 	for (i=1;i<=n;i++) {
 		pack_one(L, b , from + i);
