@@ -36,6 +36,9 @@ SRCS=\
 ltask.$(SO) : $(SRCS)
 	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB) $(LIBS)
 
+seri.$(SO) : src/lua-seri.c
+	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB) -D TEST_SERI
+
 clean :
 	rm -rf *.$(SO)
 

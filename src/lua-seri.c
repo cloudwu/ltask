@@ -2,6 +2,12 @@
 	modify from https://github.com/cloudwu/lua-serialize
  */
 
+#ifdef TEST_SERI
+
+#define LUA_LIB
+
+#endif
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <stdlib.h>
@@ -9,10 +15,14 @@
 #include <assert.h>
 #include <string.h>
 
-#define TYPE_NIL 0
-#define TYPE_BOOLEAN 1
+#define TYPE_BOOLEAN 0
+
+#define TYPE_BOOLEAN_NIL 0
+#define TYPE_BOOLEAN_FALSE 1
+#define TYPE_BOOLEAN_TRUE 2
+
 // hibits 0 false 1 true
-#define TYPE_NUMBER 2
+#define TYPE_NUMBER 1
 // hibits 0 : 0 , 1: byte, 2:word, 4: dword, 6: qword, 8 : double
 #define TYPE_NUMBER_ZERO 0
 #define TYPE_NUMBER_BYTE 1
@@ -21,25 +31,29 @@
 #define TYPE_NUMBER_QWORD 6
 #define TYPE_NUMBER_REAL 8
 
-#define TYPE_USERDATA 3
+#define TYPE_USERDATA 2
 // hibits 0 : void *
 // hibits 1 : c function
 #define TYPE_USERDATA_POINTER 0
 #define TYPE_USERDATA_CFUNCTION 1
 
-#define TYPE_SHORT_STRING 4
+#define TYPE_SHORT_STRING 3
 // hibits 0~31 : len
-#define TYPE_LONG_STRING 5
-#define TYPE_TABLE 6
+#define TYPE_LONG_STRING 4
 
-// hibits 0~31 : ref parent
+// hibits 0~30 : array size , 31 : extend size
+#define TYPE_TABLE 5
+#define TYPE_TABLE_MARK 6
+
+// hibits 0~30 : ref ancestor id , 31 : extend id ( number )
 #define TYPE_REF 7
 
 #define MAX_COOKIE 32
+#define EXTEND_NUMBER (MAX_COOKIE-1)
 #define COMBINE_TYPE(t,v) ((t) | (v) << 3)
 
 #define BLOCK_SIZE 128
-#define MAX_DEPTH 32
+#define MAX_DEPTH 31
 
 struct block {
 	struct block * next;
@@ -48,6 +62,8 @@ struct block {
 
 struct stack {
 	int depth;
+	int ref_index;
+	int objectid;
 	int ancestor[MAX_DEPTH];
 };
 
@@ -73,7 +89,7 @@ blk_alloc(void) {
 	return b;
 }
 
-inline static void
+static inline void
 wb_push(struct write_block *b, const void *buf, int sz) {
 	const char * buffer = buf;
 	if (b->ptr == BLOCK_SIZE) {
@@ -95,6 +111,22 @@ _again:
 	}
 }
 
+static inline void *
+wb_address(struct write_block *b) {
+	if (b->ptr == BLOCK_SIZE) {
+		b->current = b->current->next = blk_alloc();
+		b->ptr = 0;
+	}
+	return (void *)(b->current->buffer + b->ptr);
+}
+
+static inline void
+stack_init(struct stack *s) {
+	s->depth = 0;
+	s->objectid = 0;
+	s->ref_index = 0;
+}
+
 static void
 wb_init(struct write_block *wb , struct block *b) {
 	wb->head = b;
@@ -102,7 +134,7 @@ wb_init(struct write_block *wb , struct block *b) {
 	wb->len = 0;
 	wb->current = wb->head;
 	wb->ptr = 0;
-	wb->s.depth = 0;
+	stack_init(&wb->s);
 }
 
 static void
@@ -125,7 +157,7 @@ rball_init(struct read_block * rb, char * buffer, int size) {
 	rb->buffer = buffer;
 	rb->len = size;
 	rb->ptr = 0;
-	rb->s.depth = 0;
+	stack_init(&rb->s);
 }
 
 static const void *
@@ -142,13 +174,13 @@ rb_read(struct read_block *rb, int sz) {
 
 static inline void
 wb_nil(struct write_block *wb) {
-	uint8_t n = TYPE_NIL;
+	uint8_t n = COMBINE_TYPE(TYPE_BOOLEAN , TYPE_BOOLEAN_NIL);
 	wb_push(wb, &n, 1);
 }
 
 static inline void
 wb_boolean(struct write_block *wb, int boolean) {
-	uint8_t n = COMBINE_TYPE(TYPE_BOOLEAN , boolean ? 1 : 0);
+	uint8_t n = COMBINE_TYPE(TYPE_BOOLEAN , boolean ? TYPE_BOOLEAN_TRUE : TYPE_BOOLEAN_FALSE);
 	wb_push(wb, &n, 1);
 }
 
@@ -230,8 +262,8 @@ static void pack_one(lua_State *L, struct write_block *b, int index);
 static int
 wb_table_array(lua_State *L, struct write_block * wb, int index) {
 	int array_size = (int)lua_rawlen(L,index);
-	if (array_size >= MAX_COOKIE-1) {
-		uint8_t n = COMBINE_TYPE(TYPE_TABLE, MAX_COOKIE-1);
+	if (array_size >= EXTEND_NUMBER) {
+		uint8_t n = COMBINE_TYPE(TYPE_TABLE, EXTEND_NUMBER);
 		wb_push(wb, &n, 1);
 		wb_integer(wb, array_size);
 	} else {
@@ -292,12 +324,25 @@ wb_table_metapairs(lua_State *L, struct write_block *wb, int index) {
 	wb_nil(wb);
 }
 
+static inline void
+mark_table(lua_State *L, struct write_block *b, int index) {
+	const void * obj = lua_topointer(L, index);
+	struct stack *s = &b->s;
+	int id = ++s->objectid;
+	lua_pushinteger(L, id);
+	lua_rawsetp(L, s->ref_index, obj);
+	void *addr = wb_address(b);
+	lua_pushlightuserdata(L, addr);
+	lua_rawseti(L, s->ref_index + 1, id);
+}
+
 static void
 wb_table(lua_State *L, struct write_block *wb, int index) {
 	luaL_checkstack(L, LUA_MINSTACK, NULL);
 	if (index < 0) {
 		index = lua_gettop(L) + index + 1;
 	}
+	mark_table(L, wb, index);
 	if (luaL_getmetafield(L, index, "__pairs") != LUA_TNIL) {
 		wb_table_metapairs(L, wb, index);
 	} else {
@@ -323,6 +368,32 @@ ref_ancestor(lua_State *L, struct write_block *b, int index) {
 		}
 	}
 	return 0;
+}
+
+static int
+ref_object(lua_State *L, struct write_block *b, int index) {
+	struct stack *s = &b->s;
+	const void * obj = lua_topointer(L, index);
+	if (lua_rawgetp(L, s->ref_index, obj) != LUA_TNUMBER) {
+		lua_pop(L, 1);
+		return 0;
+	}
+	int id = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+	uint8_t n = COMBINE_TYPE(TYPE_REF, EXTEND_NUMBER);
+	wb_push(b, &n, 1);
+	wb_integer(b, id);
+	if (lua_rawgeti(L, s->ref_index + 1, id) == LUA_TLIGHTUSERDATA) {
+		uint8_t * tag = (uint8_t *)lua_touserdata(L, -1);
+		lua_pop(L, 1);
+		assert((*tag & 0x7) == TYPE_TABLE);
+		*tag = COMBINE_TYPE(TYPE_TABLE_MARK, *tag >> 3);
+		lua_pushnil(L);
+		lua_rawseti(L, s->ref_index + 1, id);
+	} else {
+		lua_pop(L, 1);
+	}
+	return 1;
 }
 
 static void
@@ -372,6 +443,8 @@ pack_one(lua_State *L, struct write_block *b, int index) {
 		}
 		if (ref_ancestor(L, b, index))
 			break;
+		if (ref_object(L, b, index))
+			break;
 		s->ancestor[s->depth] = index;
 		++s->depth;
 		wb_table(L, b, index);
@@ -386,8 +459,12 @@ pack_one(lua_State *L, struct write_block *b, int index) {
 
 static void
 pack_from(lua_State *L, struct write_block *b, int from) {
-	int n = lua_gettop(L) - from;
+	int top = lua_gettop(L);
+	int n = top - from;
 	int i;
+	lua_newtable(L);	// for table ref lookup { pointer -> id }
+	lua_newtable(L);	// for table refs array { address, ... }
+	b->s.ref_index = top + 1;
 	for (i=1;i<=n;i++) {
 		pack_one(L, b , from + i);
 	}
@@ -476,22 +553,28 @@ get_buffer(lua_State *L, struct read_block *rb, int len) {
 
 static void unpack_one(lua_State *L, struct read_block *rb);
 
+static int
+get_extend_integer(lua_State *L, struct read_block *rb) {
+	uint8_t type;
+	const uint8_t *t = rb_read(rb, sizeof(type));
+	if (t==NULL) {
+		invalid_stream(L,rb);
+	}
+	type = *t;
+	int cookie = type >> 3;
+	if ((type & 7) != TYPE_NUMBER || cookie == TYPE_NUMBER_REAL) {
+		invalid_stream(L,rb);
+	}
+	return (int)get_integer(L,rb,cookie);
+}
+
 static void
 unpack_table(lua_State *L, struct read_block *rb, int array_size) {
-	if (array_size == MAX_COOKIE-1) {
-		uint8_t type;
-		const uint8_t *t = rb_read(rb, sizeof(type));
-		if (t==NULL) {
-			invalid_stream(L,rb);
-		}
-		type = *t;
-		int cookie = type >> 3;
-		if ((type & 7) != TYPE_NUMBER || cookie == TYPE_NUMBER_REAL) {
-			invalid_stream(L,rb);
-		}
-		array_size = (int)get_integer(L,rb,cookie);
+	if (array_size == EXTEND_NUMBER) {
+		array_size = get_extend_integer(L, rb);
 	}
 	struct stack *s = &rb->s;
+	++s->objectid;
 	luaL_checkstack(L,LUA_MINSTACK,NULL);
 	lua_createtable(L,array_size,0);
 	if (s->depth >= MAX_DEPTH)
@@ -520,19 +603,35 @@ unpack_table(lua_State *L, struct read_block *rb, int array_size) {
 static void
 unpack_ref(lua_State *L, struct read_block *rb, int ref) {
 	struct stack *s = &rb->s;
-	if (ref >= s->depth)
-		luaL_error(L, "Invalid ref object %d/%d", ref, s->depth);
-	lua_pushvalue(L, s->ancestor[ref]);
+	if (ref == EXTEND_NUMBER) {
+		int id = get_extend_integer(L, rb);
+		if (lua_rawgeti(L, s->ref_index, id) != LUA_TTABLE) {
+			luaL_error(L, "Invalid ref object id %d", id);
+		}
+	} else {
+		if (ref >= s->depth)
+			luaL_error(L, "Invalid ref object %d/%d", ref, s->depth);
+		lua_pushvalue(L, s->ancestor[ref]);
+	}
 }
 
 static void
 push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 	switch(type) {
-	case TYPE_NIL:
-		lua_pushnil(L);
-		break;
 	case TYPE_BOOLEAN:
-		lua_pushboolean(L,cookie);
+		switch (cookie) {
+		case TYPE_BOOLEAN_NIL:
+			lua_pushnil(L);
+			break;
+		case TYPE_BOOLEAN_FALSE:
+			lua_pushboolean(L,0);
+			break;
+		case TYPE_BOOLEAN_TRUE:
+			lua_pushboolean(L,1);
+			break;
+		default:
+			luaL_error(L, "Invalid boolean subtype %d", cookie);
+		}
 		break;
 	case TYPE_NUMBER:
 		if (cookie == TYPE_NUMBER_REAL) {
@@ -579,6 +678,11 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 	case TYPE_TABLE:
 		unpack_table(L,rb,cookie);
 		break;
+	case TYPE_TABLE_MARK:
+		unpack_table(L,rb,cookie);
+		lua_pushvalue(L, -1);
+		lua_rawseti(L, rb->s.ref_index, rb->s.objectid);
+		break;
 	case TYPE_REF:
 		unpack_ref(L,rb,cookie);
 		break;
@@ -622,12 +726,14 @@ seri(struct block *b, int len) {
 static int
 seri_unpack_(lua_State *L) {
 	void *buffer = lua_touserdata(L, 1);
-	lua_pop(L, 1);
+	lua_settop(L, 0);
 	int len = 0;
 	memcpy(&len, buffer, 4);	// get length
 
 	struct read_block rb;
 	rball_init(&rb, (char *)buffer + 4, len);
+	lua_newtable(L);	// ref table
+	rb.s.ref_index = 1;
 
 	int i;
 	for (i=0;;i++) {
@@ -642,7 +748,7 @@ seri_unpack_(lua_State *L) {
 		push_value(L, &rb, type & 0x7, type>>3);
 	}
 
-	return lua_gettop(L);
+	return lua_gettop(L) - 1;
 }
 
 int
@@ -733,3 +839,20 @@ luaseri_pack(lua_State *L) {
 	lua_pushinteger(L, sz);
 	return 2;
 }
+
+#ifdef TEST_SERI
+
+LUAMOD_API int
+luaopen_seri(lua_State *L) {
+	luaL_checkversion(L);
+	luaL_Reg l[] = {
+		{ "pack", luaseri_pack },
+		{ "unpack", luaseri_unpack },
+		{ "unpack_remove", luaseri_unpack_remove },
+		{ NULL, NULL },
+	};
+	luaL_newlib(L, l);
+	return 1;
+}
+
+#endif
