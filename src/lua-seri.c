@@ -579,6 +579,10 @@ unpack_table(lua_State *L, struct read_block *rb, int array_size, int type) {
 	lua_createtable(L,array_size,0);
 	if (type == TYPE_TABLE_MARK) {
 		lua_pushvalue(L, -1);
+		if (lua_type(L, s->ref_index) == LUA_TNIL) {
+			lua_newtable(L);
+			lua_replace(L, s->ref_index);
+		}
 		lua_rawseti(L, s->ref_index, id);
 	}
 	if (s->depth >= MAX_DEPTH)
@@ -609,7 +613,7 @@ unpack_ref(lua_State *L, struct read_block *rb, int ref) {
 	struct stack *s = &rb->s;
 	if (ref == EXTEND_NUMBER) {
 		int id = get_extend_integer(L, rb);
-		if (lua_rawgeti(L, s->ref_index, id) != LUA_TTABLE) {
+		if (lua_type(L, s->ref_index) != LUA_TTABLE || lua_rawgeti(L, s->ref_index, id) != LUA_TTABLE) {
 			luaL_error(L, "Invalid ref object id %d", id);
 		}
 	} else {
@@ -732,7 +736,7 @@ seri_unpack_(lua_State *L) {
 
 	struct read_block rb;
 	rball_init(&rb, (char *)buffer + 4, len);
-	lua_newtable(L);	// ref table
+	lua_pushnil(L);	// slot for ref table
 	rb.s.ref_index = 1;
 
 	int i;
