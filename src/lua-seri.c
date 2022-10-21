@@ -569,14 +569,18 @@ get_extend_integer(lua_State *L, struct read_block *rb) {
 }
 
 static void
-unpack_table(lua_State *L, struct read_block *rb, int array_size) {
+unpack_table(lua_State *L, struct read_block *rb, int array_size, int type) {
 	if (array_size == EXTEND_NUMBER) {
 		array_size = get_extend_integer(L, rb);
 	}
 	struct stack *s = &rb->s;
-	++s->objectid;
+	int id = ++s->objectid;
 	luaL_checkstack(L,LUA_MINSTACK,NULL);
 	lua_createtable(L,array_size,0);
+	if (type == TYPE_TABLE_MARK) {
+		lua_pushvalue(L, -1);
+		lua_rawseti(L, s->ref_index, id);
+	}
 	if (s->depth >= MAX_DEPTH)
 		luaL_error(L, "Invalid layer %d", s->depth);
 	s->ancestor[s->depth] = lua_gettop(L);
@@ -676,12 +680,8 @@ push_value(lua_State *L, struct read_block *rb, int type, int cookie) {
 		break;
 	}
 	case TYPE_TABLE:
-		unpack_table(L,rb,cookie);
-		break;
 	case TYPE_TABLE_MARK:
-		unpack_table(L,rb,cookie);
-		lua_pushvalue(L, -1);
-		lua_rawseti(L, rb->s.ref_index, rb->s.objectid);
+		unpack_table(L,rb,cookie,type);
 		break;
 	case TYPE_REF:
 		unpack_ref(L,rb,cookie);
