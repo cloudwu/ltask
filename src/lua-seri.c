@@ -432,6 +432,8 @@ lookup_ref(lua_State *L, struct write_block *b, const void *obj) {
 			change_mark(tag);
 			lua_pushnil(L);
 			lua_rawseti(L, b->s.ref_index + 1, id);
+		} else {
+			lua_pop(L, 1);
 		}
 		return id;
 	}
