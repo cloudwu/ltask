@@ -129,7 +129,7 @@ wb_address(struct write_block *b) {
 }
 
 static inline void
-stack_init(struct stack *s) {
+init_stack(struct stack *s) {
 	s->depth = 0;
 	s->objectid = 0;
 	s->ref_index = 0;
@@ -142,7 +142,7 @@ wb_init(struct write_block *wb , struct block *b) {
 	wb->len = 0;
 	wb->current = wb->head;
 	wb->ptr = 0;
-	stack_init(&wb->s);
+	init_stack(&wb->s);
 }
 
 static void
@@ -165,7 +165,7 @@ rball_init(struct read_block * rb, char * buffer, int size) {
 	rb->buffer = buffer;
 	rb->len = size;
 	rb->ptr = 0;
-	stack_init(&rb->s);
+	init_stack(&rb->s);
 }
 
 static const void *
