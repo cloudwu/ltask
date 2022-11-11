@@ -752,7 +752,6 @@ struct preload_thread {
 	void *thread;
 	struct service *service;
 	atomic_int term;
-	struct ltask *task;
 };
 
 static void
@@ -806,9 +805,10 @@ preinit_thread(void *args) {
 			int r = lua_resume(L, NULL, 1, &result);
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
-					struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
-					(void)task;
-					debug_printf(task->logger, "preinit error : %s", lua_tostring(L, -1));
+#ifdef DEBUGLOG
+					struct debug_logger * logger = dlog_new("PREINIT", -1);
+					debug_printf(logger, "preinit error : %s", lua_tostring(L, -1));
+#endif
 				}
 				L = NULL;
 			} else {
