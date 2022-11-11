@@ -648,6 +648,7 @@ ltask_exclusive(lua_State *L) {
 	e->thread_id = ecount;
 	e->term_signal = 0;
 	e->sending = queue_new_ptr(task->config->queue_sending);
+	service_bind_thread(task->services, e->service, e->thread_id);
 	if (ecount+1 < MAX_EXCLUSIVE) {
 		e[1].task = NULL;
 	}

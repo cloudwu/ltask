@@ -506,6 +506,14 @@ service_thread_id(struct service_pool *p, service_id id) {
 	return S->thread_id;
 }
 
+void
+ service_bind_thread(struct service_pool *p, service_id id, int thread_id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return;
+	S->thread_id = thread_id;
+ }
+
 int
 service_push_message(struct service_pool *p, service_id id, struct message *msg) {
 	struct service *s = get_service(p, id);
