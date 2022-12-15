@@ -13,8 +13,6 @@ typedef struct {
 	LPVOID volatile v;
 } atomic_ptr;
 
-#define ATOMIC_VAR_INIT(v) { v }
-
 static inline void
 atomic_int_init(atomic_int *aint, int v) {
 	aint->v = (LONG)v;
