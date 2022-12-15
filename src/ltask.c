@@ -957,7 +957,7 @@ ltask_init_socket(lua_State *L) {
 
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
-	static atomic_int init = ATOMIC_VAR_INIT(0);
+	static atomic_int init = 0;
 	if (atomic_int_inc(&init) != 1) {
 		return luaL_error(L, "ltask.bootstrap can only require once");
 	}
@@ -1556,7 +1556,7 @@ ltask_closeservice(lua_State *L) {
 
 LUAMOD_API int
 luaopen_ltask_root(lua_State *L) {
-	static atomic_int init = ATOMIC_VAR_INIT(0);
+	static atomic_int init = 0;
 	if (atomic_int_inc(&init) != 1) {
 		return luaL_error(L, "ltask.root can only require once");
 	}
