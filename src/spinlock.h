@@ -6,36 +6,35 @@
 #include <windows.h>
 
 struct spinlock {
-	CRITICAL_SECTION cs;
+	SRWLOCK lock;
 };
 
 static inline int
-spinlock_init(struct spinlock *lock) {
-	InitializeCriticalSection(&lock->cs);
+spinlock_init(struct spinlock *sp) {
+	memset(sp, 0, sizeof(*sp));
 	return 0;
 }
 
 static inline int
-spinlock_destroy(struct spinlock *lock) {
-	DeleteCriticalSection(&lock->cs);
+spinlock_destroy(struct spinlock *sp) {
 	return 0;
 }
 
 static inline int
-spinlock_acquire(struct spinlock *lock) {
-	EnterCriticalSection(&lock->cs);
+spinlock_acquire(struct spinlock *sp) {
+	AcquireSRWLockExclusive(&sp->lock);
 	return 0;
 }
 
 static inline int
-spinlock_release(struct spinlock *lock) {
-	LeaveCriticalSection(&lock->cs);
+spinlock_release(struct spinlock *sp) {
+	ReleaseSRWLockExclusive(&sp->lock);
 	return 0;
 }
 
 static inline int
-spinlock_try(struct spinlock *lock) {
-	return !TryEnterCriticalSection(&lock->cs);
+spinlock_try(struct spinlock *sp) {
+	return !TryAcquireSRWLockExclusive(&sp->lock);
 }
 
 #else
