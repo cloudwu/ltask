@@ -7,25 +7,23 @@
 
 struct cond {
     CONDITION_VARIABLE c;
-    CRITICAL_SECTION lock;
+    SRWLOCK lock;
     int flag;
 };
 
 static inline void
 cond_create(struct cond *c) {
-    InitializeCriticalSection(&c->lock);
-    InitializeConditionVariable(&c->c);
-	c->flag = 0;    
+	memset(c, 0, sizeof(*c));
 }
 
 static inline void
 cond_release(struct cond *c) {
-    DeleteCriticalSection(&c->lock);
+    (void)c;
 }
 
 static inline void
 cond_trigger_begin(struct cond *c) {
-    EnterCriticalSection(&c->lock);
+    AcquireSRWLockExclusive(&c->lock);
 	c->flag = 1;
 }
 
@@ -36,24 +34,24 @@ cond_trigger_end(struct cond *c, int trigger) {
     } else {
         c->flag = 0;
     }
-	LeaveCriticalSection(&c->lock);
+	ReleaseSRWLockExclusive(&c->lock);
 }
 
 static inline void
 cond_wait_begin(struct cond *c) {
-	EnterCriticalSection(&c->lock);
+	AcquireSRWLockExclusive(&c->lock);
 }
 
 static inline void
 cond_wait_end(struct cond *c) {
 	c->flag = 0;
-    LeaveCriticalSection(&c->lock);
+    ReleaseSRWLockExclusive(&c->lock);
 }
 
 static inline void
 cond_wait(struct cond *c) {
 	while (!c->flag)
-        SleepConditionVariableCS(&c->c, &c->lock, INFINITE);
+        SleepConditionVariableSRW(&c->c, &c->lock, INFINITE, 0);
 }
 
 #else
