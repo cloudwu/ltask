@@ -270,6 +270,9 @@ local function report_error(addr, session, errobj)
 end
 
 function ltask.error(addr, session, errobj)
+	if session == 0 then
+		return
+	end
 	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
 	continue_session()
 	local type, msg, sz = ltask.message_receipt()
@@ -718,6 +721,59 @@ end
 
 -------------
 
+do
+	local function run_parallel(task)
+		local ret = {}
+		local n = #task
+		local function resp(i, ...)
+			ret[i] = { ... }
+		end
+		for i, t in ipairs(task) do
+			ltask.fork(function()
+				resp(i, pcall(t[1], table.unpack(t, 2)))
+				n = n - 1
+				if n == 0 then
+					ltask.wakeup(ret)
+				end
+			end)
+		end
+		ltask.wait(ret)
+		return ret
+	end
+
+	function ltask.parallel(task)
+		local ret = run_parallel(task)
+		local i = 1
+		local err
+		return function()
+			while true do
+				local r = ret[i]
+				local t = task[i]
+				i = i + 1
+				if r then
+					if r[1] then
+						return t, table.unpack(r, 2)
+					else
+						err = true
+					end
+				elseif err then
+					local err_msg = {}
+					for _, v in ipairs(ret) do
+						if not v[1] then
+							table.insert(err_msg, tostring(v[2]))
+						end
+					end
+					error(table.concat(err_msg, "\n"))
+				else
+					return
+				end
+			end
+		end
+	end
+end
+
+-------------
+
 local quit
 
 function ltask.quit()
@@ -867,6 +923,9 @@ local function init_exclusive()
 		return true
 	end
 	function ltask.error(address, session, errobj)
+		if session == 0 then
+			return
+		end
 		post_message(address, session, MESSAGE_ERROR, ltask.pack(errobj))
 	end
 end

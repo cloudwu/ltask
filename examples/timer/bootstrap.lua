@@ -31,4 +31,19 @@ print(ltask.send_direct(addr, "ping", "SEND"))
 ltask.send(addr, "exit")
 print(ltask.send(addr, "ping", "SEND"))
 
+local function run_task(what, ti)
+	ltask.sleep(ti)
+	return what
+end
+
+local task = {
+	{ run_task, "a", 20 },
+	{ run_task, "b", 10},
+	{ run_task, "c", 0 },
+}
+
+for req, resp in ltask.parallel(task) do
+	print(resp)
+end
+
 print "Bootstrap End"
