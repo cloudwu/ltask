@@ -11,7 +11,7 @@ struct spinlock {
 
 static inline int
 spinlock_init(struct spinlock *sp) {
-	memset(sp, 0, sizeof(*sp));
+	InitializeSRWLock(&sp->lock);
 	return 0;
 }
 
