@@ -447,6 +447,22 @@ function ltask.sleep(ti)
 	yield_session()
 end
 
+function ltask.thread_info(thread)
+	local v = {}
+	v[".name"] = debug.getinfo(thread, 1, "n")
+	local index = 1
+	while true do
+		local name, value = debug.getlocal(thread, 1, index)
+		if name then
+			v[name] = value
+		else
+			break
+		end
+		index = index + 1
+	end
+	return v
+end
+
 function ltask.timeout(ti, func)
 	local co = new_thread(func)
 	session_coroutine_suspend_lookup[session_id] = co
