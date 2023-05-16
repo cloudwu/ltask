@@ -894,10 +894,10 @@ local function init_exclusive()
 				blocked_message[n+1] = address
 				blocked_message[n+2] = session
 				blocked_message[n+3] = type
-				blocked_message[n+4] = msg
-				blocked_message[n+5] = sz
+				blocked_message[n+4] = msg or false
+				blocked_message[n+5] = sz or false
 			else
-				blocked_message = { address, session, type, msg, sz }
+				blocked_message = { address, session, type, msg or false, sz or false }
 				ltask.fork(retry_blocked_message)
 			end
 		end
@@ -913,8 +913,8 @@ local function init_exclusive()
 			local address = blocked[i]
 			local session = blocked[i+1]
 			local type    = blocked[i+2]
-			local msg     = blocked[i+3]
-			local sz      = blocked[i+4]
+			local msg     = blocked[i+3] or nil
+			local sz      = blocked[i+4] or nil
 			post_message(address, session, type, msg, sz)
 		end
 	end
@@ -1039,6 +1039,7 @@ function ltask.schedule_message()
 			wakeup_session(co, type, session, msg, sz)
 		end
 	else
+		dispatch_wakeup()
 		return SCHEDULE_IDLE
 	end
 	dispatch_wakeup()
