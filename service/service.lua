@@ -968,10 +968,8 @@ local function sys_service_init(t)
 		if t.exclusive then
 			init_exclusive()
 		end
-		local r = f(table.unpack(t.args))
-		if service == nil then
-			service = r
-		end
+		local handler = f(table.unpack(t.args))
+		ltask.dispatch(handler)
 	else
 		if t.exclusive then
 			init_exclusive()
