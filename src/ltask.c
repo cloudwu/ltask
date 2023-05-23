@@ -1009,6 +1009,17 @@ getSup(lua_State *L) {
 	return ud;
 }
 
+static inline const struct service_ud *
+getSdelay(lua_State *L) {
+	const struct service_ud *S = getSup(L);
+	if (S == NULL) {
+		S = getS(L);
+		lua_pushlightuserdata(L, (void *)S);
+		lua_replace(L, lua_upvalueindex(1));
+	}
+	return S;
+}
+
 // Timer
 
 struct timer_event {
@@ -1137,9 +1148,8 @@ gen_send_message(lua_State *L, service_id id) {
 	pointer message
 	integer sz
  */
-static int
-lsend_message(lua_State *L) {
-	const struct service_ud *S = getSup(L);
+static inline int
+lsend_message_(lua_State *L, const struct service_ud *S) {
 	struct message *msg = gen_send_message(L, S->id);
 	if (!lua_isyieldable(L)) {
 		message_delete(msg);
@@ -1151,6 +1161,16 @@ lsend_message(lua_State *L) {
 		return luaL_error(L, "Can't send message");
 	}
 	return 0;
+}
+
+static inline int
+lsend_message(lua_State *L) {
+	return lsend_message_(L, getSup(L));
+}
+
+static inline int
+lsend_message_delay(lua_State *L) {
+	return lsend_message_(L, getSdelay(L));
 }
 
 static void
@@ -1179,9 +1199,8 @@ release_scheduler_by_id(struct ltask * task, int thread_id) {
 	}
 }
 
-static int
-lsend_message_direct(lua_State *L) {
-	const struct service_ud *S = getSup(L);
+static inline int
+lsend_message_direct_(lua_State *L, const struct service_ud *S) {
 	struct message *msg = gen_send_message(L, S->id);
 	struct ltask * task = S->task;
 
@@ -1209,6 +1228,16 @@ lsend_message_direct(lua_State *L) {
 }
 
 static inline int
+lsend_message_direct(lua_State *L) {
+	return lsend_message_direct_(L, getSup(L));
+}
+
+static inline int
+lsend_message_direct_delay(lua_State *L) {
+	return lsend_message_direct_(L, getSdelay(L));
+}
+
+static inline int
 lexclusive_send_message_(lua_State *L, const struct service_ud *S) {
 	int ethread = service_thread_id(S->task->services, S->id);
 	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
@@ -1233,18 +1262,11 @@ lexclusive_send_message(lua_State *L) {
 
 static int
 lexclusive_send_message_delay(lua_State *L) {
-	const struct service_ud *S = getSup(L);
-	if (S == NULL) {
-		S = getS(L);
-		lua_pushlightuserdata(L, (void *)S);
-		lua_replace(L, lua_upvalueindex(1));
-	}
-	return lexclusive_send_message_(L, S);
+	return lexclusive_send_message_(L, getSdelay(L));
 }
 
-static int
-lrecv_message(lua_State *L) {
-	const struct service_ud *S = getSup(L);
+static inline int
+lrecv_message_(lua_State *L, const struct service_ud *S) {
 	struct message *m = service_pop_message(S->task->services, S->id);
 	if (m == NULL)
 		return 0;
@@ -1265,8 +1287,17 @@ lrecv_message(lua_State *L) {
 }
 
 static int
-lmessage_receipt(lua_State *L) {
-	const struct service_ud *S = getSup(L);
+lrecv_message(lua_State *L) {
+	return lrecv_message_(L, getSup(L));
+}
+
+static int
+lrecv_message_delay(lua_State *L) {
+	return lrecv_message_(L, getSdelay(L));
+}
+
+static inline int
+lmessage_receipt_(lua_State *L, const struct service_ud *S) {
 	int receipt;
 	struct message *m = service_read_receipt(S->task->services, S->id, &receipt);
 	if (receipt == MESSAGE_RECEIPT_NONE) {
@@ -1292,6 +1323,16 @@ lmessage_receipt(lua_State *L) {
 		message_delete(m);
 		return 1;
 	}
+}
+
+static int
+lmessage_receipt(lua_State *L) {
+	return lmessage_receipt_(L, getSup(L));
+}
+
+static int
+lmessage_receipt_delay(lua_State *L) {
+	return lmessage_receipt_(L, getSdelay(L));
 }
 
 static int
@@ -1471,17 +1512,28 @@ luaopen_ltask(lua_State *L) {
 
 	luaL_newlib(L, l);
 
-	luaL_Reg l2[] = {
-		{ "send_message", lsend_message },
-		{ "send_message_direct", lsend_message_direct },
-		{ "recv_message", lrecv_message },
-		{ "message_receipt", lmessage_receipt },
-		{ NULL, NULL },
-	};
-
 	const struct service_ud *S = getSinit(L);
 	if (S) {
+		luaL_Reg l2[] = {
+			{ "send_message", lsend_message },
+			{ "send_message_direct", lsend_message_direct },
+			{ "recv_message", lrecv_message },
+			{ "message_receipt", lmessage_receipt },
+			{ NULL, NULL },
+		};
+
 		lua_pushlightuserdata(L, (void *)S);
+		luaL_setfuncs(L, l2, 1);
+	} else {
+		luaL_Reg l2[] = {
+			{ "send_message", lsend_message_delay },
+			{ "send_message_direct", lsend_message_direct_delay },
+			{ "recv_message", lrecv_message_delay },
+			{ "message_receipt", lmessage_receipt_delay },
+			{ NULL, NULL },
+		};
+
+		lua_pushlightuserdata(L, NULL);
 		luaL_setfuncs(L, l2, 1);
 	}
 
