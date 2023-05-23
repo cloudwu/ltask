@@ -992,6 +992,23 @@ getS(lua_State *L) {
 	return ud;
 }
 
+static inline const struct service_ud *
+getSinit(lua_State *L) {
+	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
+		lua_pop(L, 1);
+		return NULL;
+	}
+	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
+	lua_pop(L, 1);
+	return ud;
+}
+
+static inline const struct service_ud *
+getSup(lua_State *L) {
+	const struct service_ud * ud = (const struct service_ud *)lua_touserdata(L, lua_upvalueindex(1));
+	return ud;
+}
+
 // Timer
 
 struct timer_event {
@@ -1122,7 +1139,7 @@ gen_send_message(lua_State *L, service_id id) {
  */
 static int
 lsend_message(lua_State *L) {
-	const struct service_ud *S = getS(L);
+	const struct service_ud *S = getSup(L);
 	struct message *msg = gen_send_message(L, S->id);
 	if (!lua_isyieldable(L)) {
 		message_delete(msg);
@@ -1164,7 +1181,7 @@ release_scheduler_by_id(struct ltask * task, int thread_id) {
 
 static int
 lsend_message_direct(lua_State *L) {
-	const struct service_ud *S = getS(L);
+	const struct service_ud *S = getSup(L);
 	struct message *msg = gen_send_message(L, S->id);
 	struct ltask * task = S->task;
 
@@ -1193,7 +1210,7 @@ lsend_message_direct(lua_State *L) {
 
 static int
 lexclusive_send_message(lua_State *L) {
-	const struct service_ud *S = getS(L);
+	const struct service_ud *S = getSup(L);
 	int ethread = service_thread_id(S->task->services, S->id);
 	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
 	if (thr == NULL)
@@ -1212,7 +1229,7 @@ lexclusive_send_message(lua_State *L) {
 
 static int
 lrecv_message(lua_State *L) {
-	const struct service_ud *S = getS(L);
+	const struct service_ud *S = getSup(L);
 	struct message *m = service_pop_message(S->task->services, S->id);
 	if (m == NULL)
 		return 0;
@@ -1234,7 +1251,7 @@ lrecv_message(lua_State *L) {
 
 static int
 lmessage_receipt(lua_State *L) {
-	const struct service_ud *S = getS(L);
+	const struct service_ud *S = getSup(L);
 	int receipt;
 	struct message *m = service_read_receipt(S->task->services, S->id, &receipt);
 	if (receipt == MESSAGE_RECEIPT_NONE) {
@@ -1419,11 +1436,11 @@ luaopen_ltask(lua_State *L) {
 		{ "unpack", luaseri_unpack },
 		{ "remove", luaseri_remove },
 		{ "unpack_remove", luaseri_unpack_remove },
-		{ "send_message", lsend_message },
-		{ "send_message_direct", lsend_message_direct },
-		{ "recv_message", lrecv_message },
+		{ "send_message", NULL },
+		{ "send_message_direct", NULL },
+		{ "recv_message", NULL },
+		{ "message_receipt", NULL },
 		{ "touch_service", ltask_touch_service },
-		{ "message_receipt", lmessage_receipt },
 		{ "self", lself },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
@@ -1438,6 +1455,21 @@ luaopen_ltask(lua_State *L) {
 	};
 
 	luaL_newlib(L, l);
+
+	luaL_Reg l2[] = {
+		{ "send_message", lsend_message },
+		{ "send_message_direct", lsend_message_direct },
+		{ "recv_message", lrecv_message },
+		{ "message_receipt", lmessage_receipt },
+		{ NULL, NULL },
+	};
+
+	const struct service_ud *S = getSinit(L);
+	if (S) {
+		lua_pushlightuserdata(L, (void *)S);
+		luaL_setfuncs(L, l2, 1);
+	}
+
 	uint64_t f = systime_frequency();
 	lua_pushinteger(L, f);
 	lua_pushcclosure(L, ltask_counter, 1);
@@ -1488,7 +1520,7 @@ LUAMOD_API int
 luaopen_ltask_exclusive(lua_State *L) {
 	luaL_checkversion(L);
 	luaL_Reg l[] = {
-		{ "send", lexclusive_send_message },
+		{ "send", NULL },
 		{ "timer_update", lexclusive_timer_update },
 		{ "sleep", lexclusive_sleep },
 		{ "scheduling", lexclusive_scheduling },
@@ -1497,6 +1529,11 @@ luaopen_ltask_exclusive(lua_State *L) {
 	};
 
 	luaL_newlib(L, l);
+
+	const struct service_ud *S = getS(L);
+	lua_pushlightuserdata(L, (void *)S);
+	lua_pushcclosure(L, lexclusive_send_message, 1);
+	lua_setfield(L, -2, "send");
 
 	return 1;
 }
