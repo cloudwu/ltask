@@ -19,6 +19,8 @@ local SELECT_PROTO = {
 
 local ltask = require "ltask"
 
+local CURRENT_SERVICE <const> = ltask.self()
+
 function ltask.log(...)
 	ltask.pushlog(ltask.pack(...))
 end
@@ -204,13 +206,13 @@ local traceback, create_traceback; do
 				errobj = {
 					message,
 					"stack traceback:",
-					("\t( service:%d )"):format(ltask.self()),
+					("\t( service:%d )"):format(CURRENT_SERVICE),
 					where,
 					level = level,
 				}
 			end
 			assert(type(errobj) == "table")
-			errobj[#errobj+1] = ("\t( service:%d )"):format(ltask.self())
+			errobj[#errobj+1] = ("\t( service:%d )"):format(CURRENT_SERVICE)
 			errobj[#errobj+1] = where
 			setmetatable(errobj, error_mt)
 			return errobj
@@ -232,7 +234,7 @@ local traceback, create_traceback; do
 			}
 		end
 		assert(type(errobj) == "table")
-		errobj[#errobj+1] = ("\t( service:%d )"):format(ltask.self())
+		errobj[#errobj+1] = ("\t( service:%d )"):format(CURRENT_SERVICE)
 		errobj[#errobj+1] = create_traceback(co, level or errobj.level)
 		setmetatable(errobj, error_mt)
 		return errobj
@@ -439,7 +441,7 @@ end
 function ltask.sleep(ti)
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	if ti == 0 then
-		ltask.post_message(ltask.self(), session_id, MESSAGE_RESPONSE)
+		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
 	else
 		ltask.timer_add(session_id, ti)
 	end
@@ -467,7 +469,7 @@ function ltask.timeout(ti, func)
 	local co = new_thread(func)
 	session_coroutine_suspend_lookup[session_id] = co
 	if ti == 0 then
-		ltask.post_message(ltask.self(), session_id, MESSAGE_RESPONSE)
+		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
 	else
 		ltask.timer_add(session_id, ti)
 	end
