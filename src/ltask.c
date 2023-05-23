@@ -1208,9 +1208,8 @@ lsend_message_direct(lua_State *L) {
 	return 1;
 }
 
-static int
-lexclusive_send_message(lua_State *L) {
-	const struct service_ud *S = getSup(L);
+static inline int
+lexclusive_send_message_(lua_State *L, const struct service_ud *S) {
 	int ethread = service_thread_id(S->task->services, S->id);
 	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
 	if (thr == NULL)
@@ -1225,6 +1224,22 @@ lexclusive_send_message(lua_State *L) {
 	}
 	lua_pushboolean(L, 1);
 	return 1;
+}
+
+static int
+lexclusive_send_message(lua_State *L) {
+	return lexclusive_send_message_(L, getSup(L));
+}
+
+static int
+lexclusive_send_message_delay(lua_State *L) {
+	const struct service_ud *S = getSup(L);
+	if (S == NULL) {
+		S = getS(L);
+		lua_pushlightuserdata(L, (void *)S);
+		lua_replace(L, lua_upvalueindex(1));
+	}
+	return lexclusive_send_message_(L, S);
 }
 
 static int
@@ -1530,9 +1545,14 @@ luaopen_ltask_exclusive(lua_State *L) {
 
 	luaL_newlib(L, l);
 
-	const struct service_ud *S = getS(L);
-	lua_pushlightuserdata(L, (void *)S);
-	lua_pushcclosure(L, lexclusive_send_message, 1);
+	const struct service_ud *S = getSinit(L);
+	if (S) {
+		lua_pushlightuserdata(L, (void *)S);
+		lua_pushcclosure(L, lexclusive_send_message, 1);
+	} else {
+		lua_pushlightuserdata(L, NULL);
+		lua_pushcclosure(L, lexclusive_send_message_delay, 1);
+	}
 	lua_setfield(L, -2, "send");
 
 	return 1;
