@@ -406,6 +406,7 @@ thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
 	atomic_int_inc(&w->task->active_worker);
+	thread_setnamef("ltask!worker-%02d", w->worker_id);
 
 	int thread_id = THREAD_WORKER(w->worker_id);
 	for (;;) {
@@ -415,7 +416,6 @@ thread_worker(void *ud) {
 		}
 		service_id id = worker_get_job(w);
 		if (id.id) {
-			thread_setname(service_getlabel(P, id));
 			w->running = id;
 			int status = service_status_get(P, id);
 			if (status != SERVICE_STATUS_DEAD) {
@@ -456,7 +456,6 @@ thread_worker(void *ud) {
 				}
 			}
 		} else {
-			thread_setname("ltask - idle worker");
 			// No job, try to acquire scheduler to find a job
 			int nojob = 1;
 			if (!acquire_scheduler(w)) {
@@ -512,7 +511,8 @@ thread_exclusive(void *ud) {
 	struct service_pool * P = e->task->services;
 	service_id id = e->service;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
-	thread_setname(service_getlabel(P, id));
+	thread_setnamef("ltask!%s", service_getlabel(P, id));
+
 	while (!e->term_signal) {
 		if (service_resume(P, id, thread_id)) {
 			// Resume error : quit
@@ -682,7 +682,7 @@ static void
 thread_logger(void *ud) {
 	struct ltask *t = (struct ltask *)ud;
 	FILE *f = t->logfile;
-	thread_setname("ltask - logger thread");
+	thread_setname("ltask!logger");
 	while (atomic_int_load(&t->thread_count) > 0) {
 		dlog_writefile(f);
 		sys_sleep(100);	// sleep 0.1s

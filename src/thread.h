@@ -201,4 +201,18 @@ thread_wait(void *p) {
 
 #endif
 
+#if defined(DEBUGTHREADNAME)
+static void inline
+thread_setnamef(const char* fmt, ...) {
+	char buf[256];
+	va_list ap;
+	va_start(ap, fmt);
+	int ret = vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	thread_setname(buf);
+}
+#else
+#define thread_setnamef(...)
+#endif
+
 #endif
