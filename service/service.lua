@@ -201,8 +201,9 @@ local traceback, create_traceback; do
 	end
 	function traceback(errobj, where)
 		if type(where) == "string" then
-			if type(errobj) == "string" then
-				local message, level = replacewhere(nil, errobj)
+			if type(errobj) ~= "table" then
+				local message = tostring(errobj)
+				local level = 0
 				errobj = {
 					message,
 					"stack traceback:",
@@ -211,7 +212,6 @@ local traceback, create_traceback; do
 					level = level,
 				}
 			end
-			assert(type(errobj) == "table")
 			errobj[#errobj+1] = ("\t( service:%d )"):format(CURRENT_SERVICE)
 			errobj[#errobj+1] = where
 			setmetatable(errobj, error_mt)
@@ -224,16 +224,15 @@ local traceback, create_traceback; do
 			co = running_thread
 			level = where
 		end
-		if type(errobj) == "string" then
+		if type(errobj) ~= "table" then
 			local message
-			message, level = replacewhere(co, errobj, level)
+			message, level = replacewhere(co, tostring(errobj), level)
 			errobj = {
 				message,
 				"stack traceback:",
 				level = level,
 			}
 		end
-		assert(type(errobj) == "table")
 		errobj[#errobj+1] = ("\t( service:%d )"):format(CURRENT_SERVICE)
 		errobj[#errobj+1] = create_traceback(co, level or errobj.level)
 		setmetatable(errobj, error_mt)
@@ -242,7 +241,7 @@ local traceback, create_traceback; do
 end
 
 local function rethrow_error(level, errobj)
-	if type(errobj) == "string" then
+	if type(errobj) ~= "table" then
 		error(errobj, level + 1)
 	else
 		errobj.level = level + 1
@@ -982,11 +981,15 @@ local function sys_service_init(t)
 	end
 end
 
+local function error_handler(errobj)
+	return traceback(errobj, 4)
+end
+
 function sys_service.init(t)
-	local ok, err = pcall(sys_service_init, t)
+	local ok, errobj = xpcall(sys_service_init, error_handler, t)
 	if not ok then
 		ltask.quit()
-		error(err)
+		rethrow_error(1, errobj)
 	end
 end
 
