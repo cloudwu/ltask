@@ -397,7 +397,8 @@ service_setlabel(struct service_pool *p, service_id id, const char *label) {
 	struct service *S = get_service(p, id);
 	if (S == NULL)
 		return 1;
-	snprintf(S->label, sizeof(S->label), "ltask - %s", label);
+	strncpy(S->label, label, sizeof(S->label)-1);
+	S->label[sizeof(S->label)-1] = '\0';
 	return 0;
 }
 
@@ -405,7 +406,7 @@ const char *
 service_getlabel(struct service_pool *p, service_id id) {
 	struct service *S = get_service(p, id);
 	if (S == NULL)
-		return "ltask - dead service";
+		return "<dead service>";
 	return S->label;
 }
 
