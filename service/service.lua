@@ -742,6 +742,9 @@ do
 	local function run_parallel(task)
 		local ret = {}
 		local n = #task
+		if n == 0 then
+			return ret
+		end
 		local function resp(i, ...)
 			ret[i] = { ... }
 		end
