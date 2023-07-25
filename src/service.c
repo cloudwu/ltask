@@ -701,7 +701,6 @@ service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz) {
 	if (S == NULL)
 		return 0;
 	lua_State *L = find_running(S->L);
-	// todo : backtrace
 	struct strbuff b = { buf, sz };
 	int level = 0;
 	lua_Debug ar;
@@ -710,9 +709,9 @@ service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz) {
 		lua_getinfo(L, "Slnt", &ar);
 		int n;
 		if (ar.currentline <= 0) {
-			n = snprintf(line, sizeof(line), "\n%s: in ", ar.short_src);
+			n = snprintf(line, sizeof(line), "%s: in ", ar.short_src);
 		} else {
-			n = snprintf(line, sizeof(line), "\n%s:%d: in ", ar.short_src, ar.currentline);
+			n = snprintf(line, sizeof(line), "%s:%d: in ", ar.short_src, ar.currentline);
 		}
 		if (addstr(&b, line, n) == 0) {
 			return sz;
@@ -720,8 +719,11 @@ service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz) {
 		if (addfuncname(&ar, &b) == 0) {
 			return sz;
 		}
+		if (addliteral(&b, "\n") == 0) {
+			return sz;
+		}
 		if (ar.istailcall) {
-			if (addliteral(&b, "\n(...tail calls...)") == 0) {
+			if (addliteral(&b, "(...tail calls...)\n") == 0) {
 				return sz;
 			}
 		}

@@ -404,16 +404,20 @@ quit_all_exclusives(struct ltask *task) {
 }
 
 static void
-crash_log(struct ltask * t, service_id id) {
+crash_log(struct ltask * t, service_id id, int sig) {
 	if (t->config->crashlog[0] == 0)
 		return;
 	char backtrace[4096];
 	int n = service_backtrace(t->services, id, backtrace, sizeof(backtrace));
 	if (n == 0)
 		return;
-	int fd = open(t->config->crashlog, O_WRONLY, 0);
-	if (fd < 0)
+	int fd = open(t->config->crashlog, O_WRONLY | O_CREAT , 0660);
+	if (fd < 0) {
 		return;
+	}
+	const char *signame = sig_name(sig);
+	write(fd, signame, strlen(signame));
+	write(fd, "\n", 1);
 	write(fd, backtrace, n);
 	close(fd);
 }
@@ -421,14 +425,14 @@ crash_log(struct ltask * t, service_id id) {
 static void
 crash_log_exclusive(int sig, void *ud) {
 	struct exclusive_thread *e = (struct exclusive_thread *)ud;
-	crash_log(e->task, e->service);
+	crash_log(e->task, e->service, sig);
 	exit(1);
 }
 
 static void
 crash_log_worker(int sig, void *ud) {
 	struct worker_thread *w = (struct worker_thread *)ud;
-	crash_log(w->task, w->running);
+	crash_log(w->task, w->running, sig);
 	exit(1);
 }
 
@@ -441,7 +445,7 @@ thread_worker(void *ud) {
 
 	int thread_id = THREAD_WORKER(w->worker_id);
 
-	sig_register(w->worker_id, crash_log_worker, w);
+	sig_register(crash_log_worker, w);
 
 	for (;;) {
 		if (w->term_signal) {
@@ -546,7 +550,7 @@ thread_exclusive(void *ud) {
 	service_id id = e->service;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
 	thread_setnamef("ltask!%s", service_getlabel(P, id));
-	sig_register(e->thread_id + e->task->config->worker, crash_log_exclusive, e);
+	sig_register(crash_log_exclusive, e);
 
 	while (!e->term_signal) {
 		if (service_resume(P, id, thread_id)) {
@@ -751,6 +755,7 @@ ltask_run(lua_State *L) {
 		t[threads_count-1].func = thread_logger;
 		t[threads_count-1].ud = (void *)task;
 	}
+	sig_init();
 	thread_join(t, threads_count);
 	if (!logthread) {
 		close_logger(task);
