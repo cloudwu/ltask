@@ -58,5 +58,6 @@ size_t service_memlimit(struct service_pool *p, service_id id, size_t limit);
 size_t service_memcount(struct service_pool *p, service_id id, int luatype);
 struct service * service_preinit(void *L, const char *source);
 void * service_preinit_L(struct service *);
+int service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz);
 
 #endif

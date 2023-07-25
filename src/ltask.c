@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include "atomic.h"
 #include "queue.h"
@@ -21,6 +22,7 @@
 #include "debuglog.h"
 #include "logqueue.h"
 #include "systime.h"
+#include "threadsig.h"
 
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
@@ -402,6 +404,35 @@ quit_all_exclusives(struct ltask *task) {
 }
 
 static void
+crash_log(struct ltask * t, service_id id) {
+	if (t->config->crashlog[0] == 0)
+		return;
+	char backtrace[4096];
+	int n = service_backtrace(t->services, id, backtrace, sizeof(backtrace));
+	if (n == 0)
+		return;
+	int fd = open(t->config->crashlog, O_WRONLY, 0);
+	if (fd < 0)
+		return;
+	write(fd, backtrace, n);
+	close(fd);
+}
+
+static void
+crash_log_exclusive(int sig, void *ud) {
+	struct exclusive_thread *e = (struct exclusive_thread *)ud;
+	crash_log(e->task, e->service);
+	exit(1);
+}
+
+static void
+crash_log_worker(int sig, void *ud) {
+	struct worker_thread *w = (struct worker_thread *)ud;
+	crash_log(w->task, w->running);
+	exit(1);
+}
+
+static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
@@ -409,6 +440,9 @@ thread_worker(void *ud) {
 	thread_setnamef("ltask!worker-%02d", w->worker_id);
 
 	int thread_id = THREAD_WORKER(w->worker_id);
+
+	sig_register(w->worker_id, crash_log_worker, w);
+
 	for (;;) {
 		if (w->term_signal) {
 			// quit
@@ -512,6 +546,7 @@ thread_exclusive(void *ud) {
 	service_id id = e->service;
 	int thread_id = THREAD_EXCLUSIVE(e->thread_id);
 	thread_setnamef("ltask!%s", service_getlabel(P, id));
+	sig_register(e->thread_id + e->task->config->worker, crash_log_exclusive, e);
 
 	while (!e->term_signal) {
 		if (service_resume(P, id, thread_id)) {
@@ -1484,6 +1519,15 @@ ltask_touch_service(lua_State *L) {
 	return 0;
 }
 
+static int
+lbacktrace(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	char buf[4096];
+	int n = service_backtrace(S->task->services, S->id, buf, sizeof(buf));
+	lua_pushlstring(L, buf, n);
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1506,6 +1550,7 @@ luaopen_ltask(lua_State *L) {
 		{ "mem_limit", ltask_memlimit },
 		{ "mem_count", ltask_memcount },
 		{ "label", ltask_label },
+		{ "backtrace", lbacktrace },
 		{ "counter", NULL },
 		{ NULL, NULL },
 	};

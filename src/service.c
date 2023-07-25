@@ -634,3 +634,97 @@ service_send_signal(struct service_pool *p, service_id id) {
 
 	s->out = message_new(&msg);
 }
+
+struct strbuff {
+	char *buf;
+	size_t sz;
+};
+
+static size_t
+addstr(struct strbuff *b, const char *str, size_t sz) {
+	if (b->sz < sz) {
+		size_t n = b->sz - 1;
+		memcpy(b->buf, str, n);
+		b->buf[n] = 0;
+		b->buf += n;
+		b->sz = 0;
+	} else {
+		memcpy(b->buf, str, sz);
+		b->buf += sz;
+		b->sz -= sz;
+	}
+	return b->sz;
+}
+
+#define addliteral(b, s) addstr(b, s, sizeof(s "") -1)
+
+static size_t
+addfuncname(lua_Debug *ar, struct strbuff *b) {
+	if (*ar->namewhat != '\0')  {	/* is there a name from code? */
+		char name[1024];
+		int n = snprintf(name, sizeof(name), "%s '%s'", ar->namewhat, ar->name);  /* use it */
+		return addstr(b, name, n);
+	} else if (*ar->what == 'm') {  /* main? */
+		return addliteral(b, "main chunk");
+	} else if (*ar->what != 'C') { /* for Lua functions, use <file:line> */
+		char name[1024];
+		int n = snprintf(name, sizeof(name), "function <%s:%d>", ar->short_src, ar->linedefined);
+		return addstr(b, name, n);
+	} else { /* nothing left... */
+		return addliteral(b, "?");
+	}
+}
+
+static lua_State *
+find_running(lua_State *L) {
+	int level = 0;
+	lua_Debug ar;
+	while (lua_getstack(L, level++, &ar)) {
+		lua_getinfo(L, "u", &ar);
+		if (ar.nparams > 0) {
+			lua_getlocal(L, &ar, 1);
+			if (lua_type(L, -1) == LUA_TTHREAD) {
+				lua_State *co = lua_tothread(L, -1);
+				lua_pop(L, 1);
+				return co;
+			} else {
+				lua_pop(L, 1);
+			}
+		}
+	}
+	return L;
+}
+
+int
+service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return 0;
+	lua_State *L = find_running(S->L);
+	// todo : backtrace
+	struct strbuff b = { buf, sz };
+	int level = 0;
+	lua_Debug ar;
+	char line[1024];
+	while (lua_getstack(L, level++, &ar)) {
+		lua_getinfo(L, "Slnt", &ar);
+		int n;
+		if (ar.currentline <= 0) {
+			n = snprintf(line, sizeof(line), "\n%s: in ", ar.short_src);
+		} else {
+			n = snprintf(line, sizeof(line), "\n%s:%d: in ", ar.short_src, ar.currentline);
+		}
+		if (addstr(&b, line, n) == 0) {
+			return sz;
+		}
+		if (addfuncname(&ar, &b) == 0) {
+			return sz;
+		}
+		if (ar.istailcall) {
+			if (addliteral(&b, "\n(...tail calls...)") == 0) {
+				return sz;
+			}
+		}
+	}
+	return (int)(sz - b.sz);
+}

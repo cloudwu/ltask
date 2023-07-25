@@ -14,6 +14,7 @@ struct ltask_config {
 	int queue;
 	int queue_sending;
 	int max_service;
+	char crashlog[128];
 };
 
 void config_load(lua_State *L, int index, struct ltask_config *config);

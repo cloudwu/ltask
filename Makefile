@@ -31,7 +31,8 @@ SRCS=\
  src/timer.c \
  src/sysapi.c \
  src/logqueue.c \
- src/debuglog.c
+ src/debuglog.c \
+ src/threadsig.c
 
 ltask.$(SO) : $(SRCS)
 	$(CC) $(CFLAGS) $(SHARED) $(LUAINC) -Isrc -o $@ $^ $(LUALIB) $(LIBS)

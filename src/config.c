@@ -2,6 +2,7 @@
 #include "sysinfo.h"
 
 #include <lauxlib.h>
+#include <string.h>
 
 static int
 config_getint(lua_State *L, int index, const char *key, int opt) {
@@ -48,6 +49,18 @@ config_load(lua_State *L, int index, struct ltask_config *config) {
 	config->queue_sending = align_pow2(config->queue_sending);
 	config->max_service = config_getint(L, index, "max_service", DEFAULT_MAX_SERVICE);
 	config->max_service = align_pow2(config->max_service);
+	if (lua_getfield(L, index, "crashlog") != LUA_TSTRING) {
+		config->crashlog[0] = 0;
+	} else {
+		size_t sz;
+		const char *log = lua_tolstring(L, -1, &sz);
+		if (sz >= sizeof(config->crashlog)) {
+			// filename is too long
+			config->crashlog[0] = 0;
+		} else {
+			memcpy(config->crashlog, log, sz+1);
+		}
+	}
 	
 	lua_pushinteger(L, config->worker);
 	lua_setfield(L, index, "worker");
