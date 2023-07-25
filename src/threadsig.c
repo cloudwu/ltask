@@ -1,3 +1,22 @@
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
+
+// todo : Windows don't support signal
+
+void
+sig_init() {
+}
+
+void
+sig_register(sig_handler handler, void *ud) {
+}
+
+const char *
+sig_name(int sig) {
+	return "";
+}
+
+#else
+
 #include "threadsig.h"
 #include <signal.h>
 #include <stddef.h>
@@ -6,15 +25,6 @@
 
 static pthread_key_t key_handler;
 static pthread_key_t key_ud;
-
-#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
-
-void
-sig_init() {
-	// todo : Windows don't support signal
-}
-
-#else
 
 static void
 signal_handler(int sig) {
@@ -37,8 +47,6 @@ sig_init() {
 	sigaction(SIGABRT, &sa, NULL);
 }
 
-#endif
-
 void
 sig_register(sig_handler handler, void *ud) {
 	pthread_setspecific(key_handler, (const void *)handler);
@@ -54,3 +62,5 @@ sig_name(int sig) {
 	default: return "Unknown Signal";
 	};
 }
+
+#endif
