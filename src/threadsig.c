@@ -1,3 +1,5 @@
+#include "threadsig.h"
+
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 
 // todo : Windows don't support signal
@@ -17,7 +19,6 @@ sig_name(int sig) {
 
 #else
 
-#include "threadsig.h"
 #include <signal.h>
 #include <stddef.h>
 #include <assert.h>
