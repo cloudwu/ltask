@@ -43,9 +43,21 @@ sig_init() {
 	struct sigaction sa;
 	sa.sa_handler = signal_handler;
 	sigfillset(&sa.sa_mask);
-	sigaction(SIGSEGV, &sa, NULL);
-	sigaction(SIGFPE, &sa, NULL);
-	sigaction(SIGABRT, &sa, NULL);
+	static const int sig[] = {
+		SIGABRT,
+		SIGBUS,
+		SIGFPE,
+		SIGHUP,
+		SIGILL,
+		SIGKILL,
+		SIGSEGV,
+		SIGSTOP,
+		SIGTERM,
+	};
+	int i;
+	for (i=0;i<sizeof(sig)/sizeof([sig[0]);i++) {
+		sigaction(sig[i], &sa, NULL);
+	}
 }
 
 void
@@ -54,13 +66,34 @@ sig_register(sig_handler handler, void *ud) {
 	pthread_setspecific(key_ud, ud);
 }
 
+// https://man7.org/linux/man-pages/man7/signal.7.html
+
 const char *
 sig_name(int sig) {
 	switch(sig) {
-	case SIGSEGV: return "SIGSEGV";
-	case SIGFPE: return "SIGFPE";
-	case SIGABRT: return "SIGABRT";
-	default: return "Unknown Signal";
+		SIGABRT: return "SIGABRT";
+		SIGALRM: return "SIGALRM";
+		SIGBUS:	 return "SIGBUS";
+		SIGCHLD: return "SIGCHLD";
+		SIGCONT: return "SIGCONT";
+		SIGFPE:	 return "SIGFPE";
+		SIGHUP:  return "SIGHUP";
+		SIGILL:	 return "SIGILL";
+		SIGINT:	 return "SIGINT";
+		SIGKILL: return "SIGKILL";
+		SIGPIPE: return "SIGPIPE";
+		SIGQUIT: return "SIGQUIT";
+		SIGSEGV: return "SIGSEGV";
+		SIGSTOP: return "SIGSTOP";
+		SIGTSTP: return "SIGTSTP";
+		SIGSYS:  return "SIGSYS";
+		SIGTERM: return "SIGTERM";
+		SIGTRAP: return "SIGTRAP";
+		SIGTTIN: return "SIGTTIN";
+		SIGTTOU: return "SIGTTOU";
+		SIGXCPU: return "SIGXCPU";
+		SIGXFSZ: return "SIGXFSZ";
+		default: return "Unknown Signal";
 	};
 }
 
