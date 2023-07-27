@@ -64,7 +64,7 @@ sig_init() {
 		SIGTERM,
 	};
 	int i;
-	for (i=0;i<sizeof(sig)/sizeof([sig[0]);i++) {
+	for (i=0;i<sizeof(sig)/sizeof(sig[0]);i++) {
 		sigaction(sig[i], &sa, NULL);
 	}
 }
