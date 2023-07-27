@@ -1651,6 +1651,20 @@ lexclusive_eventinit(lua_State *L) {
 	return 2;
 }
 
+static int
+lexclusive_eventreset(lua_State *L) {
+	struct exclusive_thread *thr = exclusive_ud(L);
+
+	sockevent_close(&thr->event);
+
+	if (sockevent_open(&thr->event) != 0) {
+		return luaL_error(L, "Reset sockevent fail");
+	}
+	lua_pushlightuserdata(L, (void *)(intptr_t)sockevent_fd(&thr->event));
+
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask_exclusive(lua_State *L) {
 	luaL_checkversion(L);
@@ -1660,6 +1674,7 @@ luaopen_ltask_exclusive(lua_State *L) {
 		{ "sleep", lexclusive_sleep },
 		{ "scheduling", lexclusive_scheduling },
 		{ "eventinit", lexclusive_eventinit },
+		{ "eventreset", lexclusive_eventreset },
 		{ NULL, NULL },
 	};
 
