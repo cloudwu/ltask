@@ -12,6 +12,10 @@ void
 sig_register(sig_handler handler, void *ud) {
 }
 
+void
+sig_register_default(sig_handler handler, void *ud) {
+}
+
 const char *
 sig_name(int sig) {
 	return "";
@@ -27,12 +31,17 @@ sig_name(int sig) {
 static pthread_key_t key_handler;
 static pthread_key_t key_ud;
 
+static sig_handler g_sig_handler = NULL;
+static void * g_sig_ud = NULL;
+
 static void
 signal_handler(int sig) {
 	sig_handler f = pthread_getspecific(key_handler);
 	void *ud = pthread_getspecific(key_ud);
 	if (f) {
 		f(sig, ud);
+	} else if (g_sig_handler) {
+		g_sig_handler(sig, g_sig_ud);
 	}
 }
 
@@ -64,6 +73,12 @@ void
 sig_register(sig_handler handler, void *ud) {
 	pthread_setspecific(key_handler, (const void *)handler);
 	pthread_setspecific(key_ud, ud);
+}
+
+void
+sig_register_default(sig_handler handler, void *ud) {
+	g_sig_handler = handler;
+	g_sig_ud = ud;
 }
 
 // https://man7.org/linux/man-pages/man7/signal.7.html

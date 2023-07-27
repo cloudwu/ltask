@@ -437,6 +437,18 @@ crash_log_worker(int sig, void *ud) {
 }
 
 static void
+crash_log_default(int sig, void *ud) {
+	const char * filename = (const char *)ud;
+	int fd = open(filename, O_WRONLY | O_CREAT , 0660);
+	if (fd < 0) {
+		return;
+	}
+	const char *signame = sig_name(sig);
+	write(fd, signame, strlen(signame));
+	close(fd);
+}
+
+static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
@@ -581,6 +593,12 @@ ltask_init(lua_State *L) {
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_CONFIG");
 
 	config_load(L, 1, config);
+
+	if (config->crashlog[0]) {
+		static char filename[sizeof(config->crashlog)];
+		memcpy(filename, config->crashlog, sizeof(config->crashlog));
+		sig_register_default(crash_log_default, filename);
+	}
 
 	struct ltask *task = (struct ltask *)lua_newuserdatauv(L, sizeof(*task), 0);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_GLOBAL");
