@@ -105,8 +105,21 @@ sockevent_open(struct sockevent *e) {
 	if (e->pipe[0] == socket_invalid)
 		goto _error;
 
+#ifdef SO_NOSIGPIPE
+	const int enable = 1;
+	if (0 != setsockopt(e->pipe[0], SOL_SOCKET, SO_NOSIGPIPE, (char*)&enable, sizeof(enable))) {
+		goto _error;
+	}
+	if (0 != setsockopt(e->pipe[0], SOL_SOCKET, SO_NOSIGPIPE, (char*)&enable, sizeof(enable))) {
+		goto _error;
+	}
+#endif
+	int flags = 0;
+#ifdef MSG_NOSIGNAL
+	flags |= MSG_NOSIGNAL;
+#endif
 	char tmp[1] = { 0 };
-	send(e->pipe[1], tmp, sizeof(tmp), 0);
+	send(e->pipe[1], tmp, sizeof(tmp), flags);
 
 	atomic_int_init(&e->e, 0);
 
@@ -128,8 +141,12 @@ sockevent_trigger(struct sockevent *e) {
 		return;
 
 	atomic_int_store(&e->e, 1);
+	int flags = 0;
+#ifdef MSG_NOSIGNAL
+	flags |= MSG_NOSIGNAL;
+#endif
 	char tmp[1] = { 0 };
-	send(e->pipe[1], tmp, sizeof(tmp), 0);
+	send(e->pipe[1], tmp, sizeof(tmp), flags);
 }
 
 static inline void
