@@ -86,28 +86,28 @@ sig_register_default(sig_handler handler, void *ud) {
 const char *
 sig_name(int sig) {
 	switch(sig) {
-		SIGABRT: return "SIGABRT";
-		SIGALRM: return "SIGALRM";
-		SIGBUS:	 return "SIGBUS";
-		SIGCHLD: return "SIGCHLD";
-		SIGCONT: return "SIGCONT";
-		SIGFPE:	 return "SIGFPE";
-		SIGHUP:  return "SIGHUP";
-		SIGILL:	 return "SIGILL";
-		SIGINT:	 return "SIGINT";
-		SIGKILL: return "SIGKILL";
-		SIGPIPE: return "SIGPIPE";
-		SIGQUIT: return "SIGQUIT";
-		SIGSEGV: return "SIGSEGV";
-		SIGSTOP: return "SIGSTOP";
-		SIGTSTP: return "SIGTSTP";
-		SIGSYS:  return "SIGSYS";
-		SIGTERM: return "SIGTERM";
-		SIGTRAP: return "SIGTRAP";
-		SIGTTIN: return "SIGTTIN";
-		SIGTTOU: return "SIGTTOU";
-		SIGXCPU: return "SIGXCPU";
-		SIGXFSZ: return "SIGXFSZ";
+		case SIGABRT: return "SIGABRT";
+		case SIGALRM: return "SIGALRM";
+		case SIGBUS:  return "SIGBUS";
+		case SIGCHLD: return "SIGCHLD";
+		case SIGCONT: return "SIGCONT";
+		case SIGFPE:  return "SIGFPE";
+		case SIGHUP:  return "SIGHUP";
+		case SIGILL:  return "SIGILL";
+		case SIGINT:  return "SIGINT";
+		case SIGKILL: return "SIGKILL";
+		case SIGPIPE: return "SIGPIPE";
+		case SIGQUIT: return "SIGQUIT";
+		case SIGSEGV: return "SIGSEGV";
+		case SIGSTOP: return "SIGSTOP";
+		case SIGTSTP: return "SIGTSTP";
+		case SIGSYS:  return "SIGSYS";
+		case SIGTERM: return "SIGTERM";
+		case SIGTRAP: return "SIGTRAP";
+		case SIGTTIN: return "SIGTTIN";
+		case SIGTTOU: return "SIGTTOU";
+		case SIGXCPU: return "SIGXCPU";
+		case SIGXFSZ: return "SIGXFSZ";
 		default: return "Unknown Signal";
 	};
 }
