@@ -149,11 +149,12 @@ sockevent_trigger(struct sockevent *e) {
 	send(e->pipe[1], tmp, sizeof(tmp), flags);
 }
 
-static inline void
+static inline int
 sockevent_wait(struct sockevent *e) {
 	char tmp[128];
-	recv(e->pipe[0], tmp, sizeof(tmp), 0);
+	int r = recv(e->pipe[0], tmp, sizeof(tmp), 0);
 	atomic_int_store(&e->e, 0);
+	return r;
 }
 
 static inline socket_t

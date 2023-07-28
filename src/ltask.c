@@ -1616,8 +1616,9 @@ luaopen_ltask(lua_State *L) {
 static int
 lexclusive_eventwait_(lua_State *L) {
 	struct exclusive_thread *e = (struct exclusive_thread *)lua_touserdata(L, lua_upvalueindex(1));
-	sockevent_wait(&e->event);
-	return 0;
+	int r = sockevent_wait(&e->event);
+	lua_pushboolean(L, r > 0);
+	return 1;
 }
 
 static struct exclusive_thread *
