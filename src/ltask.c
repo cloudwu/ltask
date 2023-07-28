@@ -675,7 +675,7 @@ get_error_message(lua_State *L) {
 	case LUA_TLIGHTUSERDATA:
 		return (const char *)lua_touserdata(L, -1);
 	case LUA_TSTRING:
-		return lua_tostring(L, 1);
+		return lua_tostring(L, -1);
 	default:
 		return "Invalid error message";
 	}
