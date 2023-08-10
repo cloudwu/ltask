@@ -2,6 +2,7 @@
 #define ltask_service_h
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define LTASK_KEY "LTASK_ID"
 
@@ -59,5 +60,6 @@ size_t service_memcount(struct service_pool *p, service_id id, int luatype);
 struct service * service_preinit(void *L, const char *source);
 void * service_preinit_L(struct service *);
 int service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz);
+uint64_t service_cpucost(struct service_pool *p, service_id id);
 
 #endif

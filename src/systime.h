@@ -9,5 +9,6 @@ uint64_t systime_mono();
 
 uint64_t systime_counter();
 uint64_t systime_frequency();
+uint64_t systime_thread();
 
 #endif

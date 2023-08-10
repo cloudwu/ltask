@@ -56,8 +56,8 @@ systime_mono() {
 	return t;
 }
 
-uint64_t
-systime_counter() {
+static inline uint64_t
+systime_counter_(int id) {
 #if defined(_WIN32)
 	LARGE_INTEGER li;
 	QueryPerformanceCounter(&li);
@@ -72,6 +72,16 @@ systime_counter() {
 	uint64_t i64 = now.tv_sec*(uint64_t)(1000000) + now.tv_usec;
 #endif
 	return i64;
+}
+
+uint64_t
+systime_counter() {
+	return systime_counter_(CLOCK_MONOTONIC);
+}
+
+uint64_t
+systime_thread() {
+	return systime_counter_(CLOCK_THREAD_CPUTIME_ID);
 }
 
 uint64_t

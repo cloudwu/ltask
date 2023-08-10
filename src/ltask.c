@@ -1551,6 +1551,15 @@ lbacktrace(lua_State *L) {
 	return 1;
 }
 
+static int
+ltask_cpucost(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	uint64_t cpucost = service_cpucost(S->task->services, S->id);
+	uint64_t freq = lua_tointeger(L, lua_upvalueindex(1));
+	lua_pushnumber(L, (double)cpucost / freq);
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1575,6 +1584,7 @@ luaopen_ltask(lua_State *L) {
 		{ "label", ltask_label },
 		{ "backtrace", lbacktrace },
 		{ "counter", NULL },
+		{ "cpucost", NULL },
 		{ NULL, NULL },
 	};
 
@@ -1609,6 +1619,11 @@ luaopen_ltask(lua_State *L) {
 	lua_pushinteger(L, f);
 	lua_pushcclosure(L, ltask_counter, 1);
 	lua_setfield(L, -2, "counter");
+
+	lua_pushinteger(L, f);
+	lua_pushcclosure(L, ltask_cpucost, 1);
+	lua_setfield(L, -2, "cpucost");
+
 	sys_init();
 	return 1;
 }

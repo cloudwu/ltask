@@ -2,6 +2,7 @@
 #include "queue.h"
 #include "config.h"
 #include "message.h"
+#include "systime.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -54,6 +55,7 @@ struct service {
 	service_id id;
 	char label[32];
 	struct memory_stat stat;
+	uint64_t cpucost;
 };
 
 struct service_pool {
@@ -170,6 +172,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->id.id = id;
 	s->status = SERVICE_STATUS_UNINITIALIZED;
 	s->thread_id = -1;
+	s->cpucost = 0;
 	*service_slot(p, id) = s;
 	result.id = id;
 	return result;
@@ -479,7 +482,9 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	if (L == NULL)
 		return 1;
 	int nresults = 0;
+	uint64_t cpu = systime_thread();
 	int r = lua_resume(L, NULL, 0, &nresults);
+	S->cpucost += systime_thread() - cpu;
 	if (r == LUA_YIELD) {
 		lua_pop(L, nresults);
 		return 0;
@@ -729,4 +734,12 @@ service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz) {
 		}
 	}
 	return (int)(sz - b.sz);
+}
+
+uint64_t
+service_cpucost(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return 0;
+	return S->cpucost;
 }
