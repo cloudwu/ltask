@@ -780,10 +780,9 @@ seri(struct block *b, int len) {
 	return buffer;
 }
 
-static int
-seri_unpack_(lua_State *L) {
-	void *buffer = lua_touserdata(L, 1);
-	lua_settop(L, 0);
+int
+seri_unpack(lua_State *L, void *buffer) {
+	int top = lua_gettop(L);
 	int len = 0;
 	memcpy(&len, buffer, 4);	// get length
 
@@ -805,7 +804,14 @@ seri_unpack_(lua_State *L) {
 		push_value(L, &rb, type & 0x7, type>>3);
 	}
 
-	return lua_gettop(L) - 1;
+	return lua_gettop(L) - 1 - top;
+}
+
+static int
+seri_unpack_(lua_State *L) {
+	void *buffer = lua_touserdata(L, 1);
+	lua_settop(L, 0);
+	return seri_unpack(L, buffer);
 }
 
 int
@@ -822,7 +828,7 @@ seri_unpackptr(lua_State *L, void *buffer) {
 }
 
 int
-seri_unpack(lua_State *L) {
+seri_unpackstr(lua_State *L) {
 	const char * buffer = luaL_checkstring(L, 1);
 	lua_settop(L, 1);
 	lua_pushcfunction(L, seri_unpack_);
