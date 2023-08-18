@@ -57,14 +57,15 @@ systime_mono() {
 }
 
 static inline uint64_t
-systime_counter_(int id) {
+systime_counter_(int thread_timer) {
 #if defined(_WIN32)
 	LARGE_INTEGER li;
 	QueryPerformanceCounter(&li);
 	uint64_t i64 = li.QuadPart;
 #elif !defined(__APPLE__) || defined(AVAILABLE_MAC_OS_X_VERSION_10_12_AND_LATER)
 	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
+	int id = thread_timer ? CLOCK_THREAD_CPUTIME_ID : CLOCK_MONOTONIC;
+	clock_gettime(id, &now);
 	uint64_t i64 = now.tv_sec*(uint64_t)(1000000000) + now.tv_nsec;
 #else
 	struct timeval now;
@@ -76,12 +77,12 @@ systime_counter_(int id) {
 
 uint64_t
 systime_counter() {
-	return systime_counter_(CLOCK_MONOTONIC);
+	return systime_counter_(0);
 }
 
 uint64_t
 systime_thread() {
-	return systime_counter_(CLOCK_THREAD_CPUTIME_ID);
+	return systime_counter_(1);
 }
 
 uint64_t
