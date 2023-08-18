@@ -789,7 +789,7 @@ seri_unpack(lua_State *L, void *buffer) {
 	struct read_block rb;
 	rball_init(&rb, (char *)buffer + 4, len);
 	lua_pushnil(L);	// slot for ref table
-	rb.s.ref_index = 1;
+	rb.s.ref_index = top + 1;
 
 	int i;
 	for (i=0;;i++) {
