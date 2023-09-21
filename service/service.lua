@@ -437,17 +437,6 @@ function ltask.syscall(address, ...)
 	end
 end
 
-function ltask.sleep(ti)
-	session_coroutine_suspend_lookup[session_id] = running_thread
-	if ti == 0 then
-		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
-	else
-		ltask.timer_add(session_id, ti)
-	end
-	session_id = session_id + 1
-	yield_session()
-end
-
 function ltask.thread_info(thread)
 	local v = {}
 	v[".name"] = debug.getinfo(thread, 1, "n")
@@ -464,15 +453,37 @@ function ltask.thread_info(thread)
 	return v
 end
 
-function ltask.timeout(ti, func)
-	local co = new_thread(func)
-	session_coroutine_suspend_lookup[session_id] = co
+function ltask.sleep(ti)
 	if ti == 0 then
-		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
+		wakeup_queue[#wakeup_queue+1] = {running_thread}
 	else
+		session_coroutine_suspend_lookup[session_id] = running_thread
 		ltask.timer_add(session_id, ti)
+		session_id = session_id + 1
 	end
-	session_id = session_id + 1
+	yield_session()
+end
+
+function ltask.yield()
+	wakeup_queue[#wakeup_queue+1] = {running_thread}
+	yield_session()
+end
+
+function ltask.timeout(ti, func)
+	if ti == 0 then
+		local co = new_thread(func)
+		wakeup_queue[#wakeup_queue+1] = {co}
+	else
+		local co = new_thread(func)
+		session_coroutine_suspend_lookup[session_id] = co
+		ltask.timer_add(session_id, ti)
+		session_id = session_id + 1
+	end
+end
+
+function ltask.fork(func, ...)
+	local co = new_thread(func)
+	wakeup_queue[#wakeup_queue+1] = {co, ...}
 end
 
 local function wait_interrupt(errobj)
@@ -549,11 +560,6 @@ function ltask.multi_interrupt(token, errobj)
 		session_waiting[token] = nil
 		return true
 	end
-end
-
-function ltask.fork(func, ...)
-	local co = new_thread(func)
-	wakeup_queue[#wakeup_queue+1] = {co, ...}
 end
 
 function ltask.current_session()
@@ -1033,9 +1039,12 @@ SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 end
 
 local function dispatch_wakeup()
-	while #wakeup_queue > 0 do
-		local s = table.remove(wakeup_queue, 1)
-		wakeup_session(table.unpack(s))
+	if #wakeup_queue > 0 then
+		local wq = wakeup_queue
+		wakeup_queue = {}
+		for i = 1, #wq do
+			wakeup_session(table.unpack(wq[i]))
+		end
 	end
 end
 
