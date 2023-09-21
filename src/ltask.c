@@ -255,11 +255,13 @@ schedule_dispatch(struct ltask *task) {
 	// Step 1 : Collect service_done
 	int done_job_n = 0;
 	service_id done_job[MAX_WORKER];
+	int thread[MAX_WORKER];
 	int i;
 	for (i=0;i<task->config->worker;i++) {
 		service_id job = worker_done_job(&task->workers[i]);
 		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
+			thread[done_job_n] = i;
 			done_job[done_job_n++] = job;
 		}
 	}
@@ -299,9 +301,13 @@ schedule_dispatch(struct ltask *task) {
 				debug_printf(task->logger, "Service %x is idle", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
-				debug_printf(task->logger, "Service %x back to schedule", id.id);
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
-				schedule_back(task, id);
+				int worker_thread = thread[i];
+				if (worker_assign_job(&task->workers[worker_thread], id)) {
+					// Can't assign to the same worker
+					debug_printf(task->logger, "Service %x back to schedule", id.id);
+					schedule_back(task, id);
+				}
 			}
 		}
 	}
@@ -319,7 +325,6 @@ schedule_dispatch(struct ltask *task) {
 				break;
 			}
 		}
-		// Todo : record assign history, and try to always assign one job to the same worker.
 		service_id id = { job };
 		if (!worker_assign_job(&task->workers[i], id)) {
 			debug_printf(task->logger, "Assign %x to worker %d", id.id, i);
