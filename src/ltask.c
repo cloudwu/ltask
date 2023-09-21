@@ -303,10 +303,20 @@ schedule_dispatch(struct ltask *task) {
 			} else {
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
 				int worker_thread = thread[i];
-				if (worker_assign_job(&task->workers[worker_thread], id)) {
+				struct worker_thread *w = &task->workers[worker_thread];
+				if (worker_assign_job(w, id)) {
 					// Can't assign to the same worker
-					debug_printf(task->logger, "Service %x back to schedule", id.id);
-					schedule_back(task, id);
+					service_id ready = worker_get_job(w);
+					if (ready.id) {
+						// Put ready id back
+						schedule_back(task, ready);
+					}
+					// Try again
+					if (worker_assign_job(w, id)) {
+						// Should never fail
+						debug_printf(task->logger, "Service %x back to schedule", id.id);
+						schedule_back(task, id);
+					}
 				}
 			}
 		}
