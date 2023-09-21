@@ -1,13 +1,36 @@
 #ifndef ltask_worker_h
 #define ltask_worker_h
 
+#include <stdint.h>
+
 #include "atomic.h"
 #include "thread.h"
 #include "service.h"
 #include "debuglog.h"
 #include "cond.h"
+#include "systime.h"
 
 struct ltask;
+
+//#define TIMELOG
+
+#ifdef TIMELOG
+
+#define TIMELOG_MAX 4096
+
+struct time_log_item {
+	int id;
+	uint32_t time;
+};
+
+struct time_log {
+	int n;
+	uint64_t start_time;
+	uint64_t last_time;
+	struct time_log_item t[TIMELOG_MAX];
+};
+
+#endif
 
 struct worker_thread {
 	struct ltask *task;
@@ -22,7 +45,37 @@ struct worker_thread {
 	int sleeping;
 	int wakeup;
 	struct cond trigger;
+#ifdef TIMELOG
+	struct time_log tlog;
+#endif
 };
+
+#ifdef TIMELOG
+
+static inline void
+worker_timelog_init(struct worker_thread *w) {
+	w->tlog.n = 0;
+	w->tlog.start_time = systime_thread();
+	w->tlog.last_time = w->tlog.start_time;
+}
+
+static inline void
+worker_timelog(struct worker_thread *w, int id) {
+	int n = w->tlog.n;
+	w->tlog.n = (n + 1) % TIMELOG_MAX;
+	struct time_log_item *item = &w->tlog.t[n];
+	item->id = id;
+	uint64_t t = systime_thread();
+	item->time = (uint32_t)(t - w->tlog.last_time);
+	w->tlog.last_time = t;
+}
+
+#else
+
+static inline void worker_timelog_init(struct worker_thread *w) {}
+static inline void worker_timelog(struct worker_thread *w, int id) {}
+
+#endif
 
 static inline void
 worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {

@@ -491,7 +491,9 @@ thread_worker(void *ud) {
 				assert(status == SERVICE_STATUS_SCHEDULE);
 				debug_printf(w->logger, "Run service %x", id.id);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
+				worker_timelog(w, id.id);
 				if (service_resume(P, id, thread_id)) {
+					worker_timelog(w, id.id);
 					debug_printf(w->logger, "Service %x quit", id.id);
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
@@ -505,6 +507,7 @@ thread_worker(void *ud) {
 						service_send_signal(P, id);
 					}
 				} else {
+					worker_timelog(w, id.id);
 					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
 			} else {
@@ -535,7 +538,9 @@ thread_worker(void *ud) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
 				debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
+				worker_timelog(w, -1);
 				worker_sleep(w);
+				worker_timelog(w, -1);
 				atomic_int_inc(&w->task->active_worker);
 				debug_printf(w->logger, "Wakeup");
 			}
