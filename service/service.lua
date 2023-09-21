@@ -74,7 +74,6 @@ local session_id = 1
 
 local session_waiting = {}
 local wakeup_queue = {}
-local exclusive_service = false
 
 ----- error handling ------
 
@@ -803,7 +802,7 @@ end
 local quit
 
 function ltask.quit()
-	if not exclusive_service then
+	if not ltask.is_exclusive() then
 		ltask.fork(function ()
 			for co, addr in pairs(session_coroutine_address) do
 				local session = session_coroutine_response[co]
@@ -908,8 +907,7 @@ local yieldable_require; do
 	end
 end
 
-local function init_exclusive()
-	exclusive_service = true
+if ltask.is_exclusive() then
 	local exclusive = require "ltask.exclusive"
 	local blocked_message
 	local retry_blocked_message
@@ -954,6 +952,9 @@ local function init_exclusive()
 		end
 		post_message(address, session, MESSAGE_ERROR, ltask.pack(errobj))
 	end
+	function ltask.on_idle()
+		exclusive.sleep(1)
+	end
 end
 
 local function sys_service_init(t)
@@ -975,15 +976,8 @@ local function sys_service_init(t)
 	if t.name then
 		local filename = assert(package.searchpath(t.name, t.service_path))
 		local f = assert(loadfile(filename))
-		if t.exclusive then
-			init_exclusive()
-		end
 		local handler = f(table.unpack(t.args))
 		ltask.dispatch(handler)
-	else
-		if t.exclusive then
-			init_exclusive()
-		end
 	end
 	if service == nil then
 		ltask.quit()
@@ -1038,19 +1032,18 @@ SESSION[MESSAGE_REQUEST] = function (type, msg, sz)
 	request(ltask.unpack_remove(msg, sz))
 end
 
-local function dispatch_wakeup()
+print = ltask.log
+
+function ltask.dispatch_wakeup()
 	if #wakeup_queue > 0 then
 		local wq = wakeup_queue
 		wakeup_queue = {}
 		for i = 1, #wq do
 			wakeup_session(table.unpack(wq[i]))
 		end
+		return true
 	end
 end
-
-local SCHEDULE_IDLE <const> = 1
-local SCHEDULE_QUIT <const> = 2
-local SCHEDULE_SUCCESS <const> = 3
 
 function ltask.schedule_message()
 	local from, session, type, msg, sz = ltask.recv_message()
@@ -1059,6 +1052,7 @@ function ltask.schedule_message()
 		-- new session for this message
 		local co = new_session(f, from, session)
 		wakeup_session(co, type, msg, sz)
+		return true
 	elseif session then
 		local co = session_coroutine_suspend_lookup[session]
 		if co == nil then
@@ -1069,40 +1063,30 @@ function ltask.schedule_message()
 			session_coroutine_suspend_lookup[session] = nil
 			wakeup_session(co, type, session, msg, sz)
 		end
-	else
-		dispatch_wakeup()
-		return SCHEDULE_IDLE
-	end
-	dispatch_wakeup()
-	if quit then
-		return SCHEDULE_QUIT
-	end
-	return SCHEDULE_SUCCESS
-end
-
-ltask.dispatch_wakeup = dispatch_wakeup
-
-print = ltask.log
-
-local function mainloop()
-	while true do
-		local s = ltask.schedule_message()
-		if s ~= SCHEDULE_SUCCESS then
-			if s == SCHEDULE_IDLE then
-				local onidle = ltask.on_idle
-				if onidle then
-					onidle()
-				end
-			else
-				-- s == SCHEDULE_QUIT
-				ltask.log "${quit}"
-				return
-			end
-		end
-		yield_service()
+		return true
 	end
 end
 
 if not no_loop then
-	mainloop()
+	if ltask.is_exclusive() then
+		local function schedule_message()
+			return ltask.schedule_message() or ltask.dispatch_wakeup()
+		end
+		while true do
+			if not schedule_message() then
+				ltask.on_idle()
+			end
+			yield_service()
+		end
+	else
+		while true do
+			ltask.schedule_message()
+			ltask.dispatch_wakeup()
+			if quit then
+				ltask.log "${quit}"
+				return
+			end
+			yield_service()
+		end
+	end
 end
