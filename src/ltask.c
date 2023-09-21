@@ -316,7 +316,11 @@ schedule_dispatch(struct ltask *task) {
 						// Should never fail
 						debug_printf(task->logger, "Service %x back to schedule", id.id);
 						schedule_back(task, id);
+					} else {
+						worker_wakeup(w);
 					}
+				} else {
+					worker_wakeup(w);
 				}
 			}
 		}
