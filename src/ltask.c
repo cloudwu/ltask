@@ -471,6 +471,7 @@ static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
+	worker_timelog_init(w);
 	atomic_int_inc(&w->task->active_worker);
 	thread_setnamef("ltask!worker-%02d", w->worker_id);
 
