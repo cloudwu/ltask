@@ -53,6 +53,7 @@ struct schedule_history {
 	int n;
 	uint64_t start[SCHEDULE_HISTORY_MAX];
 	uint32_t time[SCHEDULE_HISTORY_MAX];
+	uint32_t idle[SCHEDULE_HISTORY_MAX];
 };
 
 #endif
@@ -513,6 +514,8 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 #ifdef SCHEDULE_HISTORY
 	S->sh.start[S->sh.n] = start;
 	S->sh.time[S->sh.n] = (uint32_t)(end - start);
+	int last = (S->sh.n + SCHEDULE_HISTORY_MAX - 1) % SCHEDULE_HISTORY_MAX;
+	S->sh.idle[S->sh.n] = (uint32_t)(start - (S->sh.start[last] + S->sh.time[last]));
 	S->sh.n = (S->sh.n + 1) % SCHEDULE_HISTORY_MAX;
 #endif
 	if (r == LUA_YIELD) {
