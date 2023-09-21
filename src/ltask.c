@@ -1560,6 +1560,21 @@ ltask_cpucost(lua_State *L) {
 	return 1;
 }
 
+static int
+ltask_isexclusive(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	service_id sid;
+	if (lua_isnoneornil(L, 1)) {
+		sid = S->id;
+	} else {
+		int id = luaL_checkinteger(L, 1);
+		sid.id = id;
+	}
+	int status = service_status_get(S->task->services, sid);
+	lua_pushboolean(L, status == SERVICE_STATUS_EXCLUSIVE);
+	return 1;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1585,6 +1600,7 @@ luaopen_ltask(lua_State *L) {
 		{ "backtrace", lbacktrace },
 		{ "counter", NULL },
 		{ "cpucost", NULL },
+		{ "is_exclusive", ltask_isexclusive },
 		{ NULL, NULL },
 	};
 
