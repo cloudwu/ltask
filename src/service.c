@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <string.h>
 
+//#define SCHEDULE_HISTORY
+
 // test whether an unsigned value is a power of 2 (or zero)
 #define ispow2(x)	(((x) & ((x) - 1)) == 0)
 
@@ -43,6 +45,19 @@ struct memory_stat {
 	size_t limit;
 };
 
+#ifdef SCHEDULE_HISTORY
+
+#define SCHEDULE_HISTORY_MAX 4096
+
+struct schedule_history {
+	int n;
+	uint64_t start[SCHEDULE_HISTORY_MAX];
+	uint32_t time[SCHEDULE_HISTORY_MAX];
+};
+
+#endif
+
+
 struct service {
 	lua_State *L;
 	lua_State *rL;
@@ -57,6 +72,9 @@ struct service {
 	struct memory_stat stat;
 	uint64_t cpucost;
 	uint64_t clock;
+#ifdef SCHEDULE_HISTORY
+	struct schedule_history sh;
+#endif
 };
 
 struct service_pool {
@@ -175,6 +193,9 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->thread_id = -1;
 	s->cpucost = 0;
 	s->clock = 0;
+#ifdef SCHEDULE_HISTORY
+	s->sh.n = 0;
+#endif
 	*service_slot(p, id) = s;
 	result.id = id;
 	return result;
@@ -484,9 +505,16 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	if (L == NULL)
 		return 1;
 	int nresults = 0;
-	S->clock = systime_thread();
+	uint64_t start = systime_thread();
+	S->clock = start;
 	int r = lua_resume(L, NULL, 0, &nresults);
-	S->cpucost += systime_thread() - S->clock;
+	uint64_t end = systime_thread();
+	S->cpucost += end - start;
+#ifdef SCHEDULE_HISTORY
+	S->sh.start[S->sh.n] = start;
+	S->sh.time[S->sh.n] = (uint32_t)(end - start);
+	S->sh.n = (S->sh.n + 1) % SCHEDULE_HISTORY_MAX;
+#endif
 	if (r == LUA_YIELD) {
 		lua_pop(L, nresults);
 		return 0;
