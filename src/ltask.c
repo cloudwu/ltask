@@ -233,6 +233,23 @@ dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 	}
 }
 
+static void
+wakeup_sleeping_workers(struct ltask *task, int jobs) {
+	if (jobs == 0)
+		return;
+	int total_worker = task->config->worker;
+	int active_worker = atomic_int_load(&task->active_worker);
+	int sleeping_worker = total_worker - active_worker;
+	if (sleeping_worker > 0 && jobs > active_worker) {
+		jobs -= active_worker;
+		int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
+		int i;
+		for (i=0;i<total_worker && wakeup > 0;i++) {
+			wakeup -= worker_wakeup(&task->workers[i]);
+		}
+	}
+}
+
 static int
 schedule_dispatch(struct ltask *task) {
 	// Step 1 : Collect service_done
@@ -314,6 +331,8 @@ schedule_dispatch(struct ltask *task) {
 	if (job != 0) {
 		// Push unassigned job back
 		queue_push_int(task->schedule, job);
+	} else {
+		wakeup_sleeping_workers(task, assign_job);
 	}
 	return assign_job;
 }
@@ -534,23 +553,13 @@ exclusive_message(struct exclusive_thread *e) {
 	service_id id = e->service;
 	struct message *message_out = service_message_out(P, id);
 	if (message_out || queue_len > 0) {
-		int total_worker = e->task->config->worker;
 		acquire_scheduler_exclusive(e);
 		if (message_out) {
 			dispatch_out_message(e->task, id, message_out);
 		}
 		dispatch_exclusive_sending(e, e->sending);
 		int jobs = schedule_dispatch(e->task);
-		int active_worker = atomic_int_load(&e->task->active_worker);
-		int sleeping_worker = total_worker - active_worker;
-		if (sleeping_worker > 0 && jobs > active_worker) {
-			jobs -= active_worker;
-			int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
-			int i;
-			for (i=0;i<total_worker && wakeup > 0;i++) {
-				wakeup -= worker_wakeup(&e->task->workers[i]);
-			}
-		}
+		wakeup_sleeping_workers(e->task, jobs);
 		release_scheduler_exclusive(e);
 	}
 }
