@@ -240,8 +240,7 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 	int total_worker = task->config->worker;
 	int active_worker = atomic_int_load(&task->active_worker);
 	int sleeping_worker = total_worker - active_worker;
-	if (sleeping_worker > 0 && jobs > active_worker) {
-		jobs -= active_worker;
+	if (sleeping_worker > 0) {
 		int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
 		int i;
 		for (i=0;i<total_worker && wakeup > 0;i++) {
@@ -585,8 +584,7 @@ exclusive_message(struct exclusive_thread *e) {
 			dispatch_out_message(e->task, id, message_out);
 		}
 		dispatch_exclusive_sending(e, e->sending);
-		int jobs = schedule_dispatch(e->task);
-		wakeup_sleeping_workers(e->task, jobs);
+		schedule_dispatch(e->task);
 		release_scheduler_exclusive(e);
 	}
 }
