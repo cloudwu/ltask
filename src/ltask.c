@@ -1644,7 +1644,7 @@ ltask_debuglog(lua_State *L) {
 	}
 	if (w == NULL)
 		return luaL_error(L, "Can't find worker");
-	debug_printf(task->logger, "%s", luaL_checkstring(L, 1));
+	debug_printf(w->logger, "%s", luaL_checkstring(L, 1));
 	return 0;
 }
 
