@@ -1632,7 +1632,7 @@ ltask_isexclusive(lua_State *L) {
 }
 
 
-#ifndef DEBUGLOG
+#ifdef DEBUGLOG
 
 static int
 ltask_debuglog(lua_State *L) {
@@ -1647,7 +1647,7 @@ ltask_debuglog(lua_State *L) {
 	}
 	if (dl == NULL) {
 		for (i=0;i<MAX_EXCLUSIVE;i++) {
-			if (S->task->exclusives[i].task == NULL) {
+			if (S->task->exclusives[i].task == NULL)
 				break;
 			if (S->task->exclusives[i].service.id == S->id.id) {
 				dl= S->task->exclusives[i].logger;
