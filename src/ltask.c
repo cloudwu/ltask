@@ -735,7 +735,7 @@ ltask_exclusive(lua_State *L) {
 #ifdef DEBUGLOG
 	e->logger = dlog_new("EXCLUSIVE", ecount);
 #endif
-	debug_printf(e->logger, "New service %x\n", e->service.id);
+	debug_printf(e->logger, "New service %x", e->service.id);
 	e->thread_id = ecount;
 	e->term_signal = 0;
 	e->sending = queue_new_ptr(task->config->queue_sending);
