@@ -1631,22 +1631,45 @@ ltask_isexclusive(lua_State *L) {
 	return 1;
 }
 
+
+#ifndef DEBUGLOG
+
 static int
 ltask_debuglog(lua_State *L) {
 	const struct service_ud *S = getS(L);
-	struct worker_thread *w = NULL;
+	struct debug_logger *dl = NULL;
 	int i;
 	for (i=0;i<S->task->config->worker;i++) {
 		if (S->task->workers[i].running.id == S->id.id) {
-			w = &S->task->workers[i];
+			dl = S->task->workers[i].logger;
 			break;
 		}
 	}
-	if (w == NULL)
-		return luaL_error(L, "Can't find worker");
-	debug_printf(w->logger, "%s", luaL_checkstring(L, 1));
+	if (dl == NULL) {
+		for (i=0;i<MAX_EXCLUSIVE;i++) {
+			if (S->task->exclusives[i].task == NULL) {
+				break;
+			if (S->task->exclusives[i].service.id == S->id.id) {
+				dl= S->task->exclusives[i].logger;
+				break;
+			}
+		}
+		if (dl == NULL) {
+			return luaL_error(L, "Can't find thread");
+		}
+	}
+	dlog_write(dl, "%s", luaL_checkstring(L, 1));
 	return 0;
 }
+
+#else
+
+static int
+ltask_debuglog(lua_State *L) {
+	return 0;
+}
+
+#endif
 
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
