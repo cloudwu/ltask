@@ -99,7 +99,7 @@ writefile_chunk(FILE *f, const char *name, struct log_chunk *c) {
 		memcpy(&header, ptr, sizeof(header));
 		ptr += sizeof(header);
 		sz -= sizeof(header);
-		fprintf(f, "[%06u:%s] %.*s\n", header.id, name, header.size, ptr);
+		fprintf(f, "[%08u:%s] %.*s\n", header.id, name, header.size, ptr);
 		fflush(f);
 		ptr += header.size;
 		sz -= header.size;
