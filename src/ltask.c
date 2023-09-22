@@ -255,13 +255,11 @@ schedule_dispatch(struct ltask *task) {
 	// Step 1 : Collect service_done
 	int done_job_n = 0;
 	service_id done_job[MAX_WORKER];
-	int thread[MAX_WORKER];
 	int i;
 	for (i=0;i<task->config->worker;i++) {
 		service_id job = worker_done_job(&task->workers[i]);
 		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
-			thread[done_job_n] = i;
 			done_job[done_job_n++] = job;
 		}
 	}
@@ -301,27 +299,9 @@ schedule_dispatch(struct ltask *task) {
 				debug_printf(task->logger, "Service %x is idle", id.id);
 				service_status_set(P, id, SERVICE_STATUS_IDLE);
 			} else {
+				debug_printf(task->logger, "Service %x back to schedule", id.id);
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
-				int worker_thread = thread[i];
-				struct worker_thread *w = &task->workers[worker_thread];
-				if (worker_assign_job(w, id)) {
-					// Can't assign to the same worker
-					service_id ready = worker_get_job(w);
-					if (ready.id) {
-						// Put ready id back
-						schedule_back(task, ready);
-					}
-					// Try again
-					if (worker_assign_job(w, id)) {
-						// Should never fail
-						debug_printf(task->logger, "Service %x back to schedule", id.id);
-						schedule_back(task, id);
-					} else {
-						worker_wakeup(w);
-					}
-				} else {
-					worker_wakeup(w);
-				}
+				schedule_back(task, id);
 			}
 		}
 	}
