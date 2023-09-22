@@ -449,6 +449,17 @@ crash_log(struct ltask * t, service_id id, int sig) {
 	int n = service_backtrace(t->services, id, backtrace, sizeof(backtrace));
 	if (n == 0)
 		return;
+#if defined(_MSC_VER)
+	FILE *f = fopen(t->config->crashlog, "wb");
+	if (f == NULL) {
+		return;
+	}
+	const char *signame = sig_name(sig);
+	fwrite(signame, 1, strlen(signame), f);
+	fwrite("\n", 1, 1, f);
+	fwrite(backtrace, 1, n, f);
+	fclose(f);
+#else
 	int fd = open(t->config->crashlog, O_WRONLY | O_CREAT , 0660);
 	if (fd < 0) {
 		return;
@@ -458,6 +469,7 @@ crash_log(struct ltask * t, service_id id, int sig) {
 	write(fd, "\n", 1);
 	write(fd, backtrace, n);
 	close(fd);
+#endif
 }
 
 static void
