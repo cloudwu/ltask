@@ -489,6 +489,15 @@ crash_log_worker(int sig, void *ud) {
 static void
 crash_log_default(int sig, void *ud) {
 	const char * filename = (const char *)ud;
+#if defined(_MSC_VER)
+	FILE *f = fopen(filename, "wb");
+	if (f == NULL) {
+		return;
+	}
+	const char *signame = sig_name(sig);
+	fwrite(signame, 1, strlen(signame), f);
+	fclose(f);
+#else
 	int fd = open(filename, O_WRONLY | O_CREAT , 0660);
 	if (fd < 0) {
 		return;
@@ -496,6 +505,7 @@ crash_log_default(int sig, void *ud) {
 	const char *signame = sig_name(sig);
 	write(fd, signame, strlen(signame));
 	close(fd);
+#endif
 }
 
 static void
