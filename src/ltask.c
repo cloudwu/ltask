@@ -1631,6 +1631,23 @@ ltask_isexclusive(lua_State *L) {
 	return 1;
 }
 
+static int
+ltask_debuglog(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	struct worker_thread *w = NULL;
+	int i;
+	for (i=0;i<S->task->config->worker;i++) {
+		if (S->task->workers[i].running.id == S->id.id) {
+			w = &S->task->workers[i];
+			break;
+		}
+	}
+	if (w == NULL)
+		return luaL_error(L, "Can't find worker");
+	debug_printf(task->logger, "%s", luaL_checkstring(L, 1));
+	return 0;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1657,6 +1674,7 @@ luaopen_ltask(lua_State *L) {
 		{ "counter", NULL },
 		{ "cpucost", NULL },
 		{ "is_exclusive", ltask_isexclusive },
+		{ "debuglog", ltask_debuglog },
 		{ NULL, NULL },
 	};
 
