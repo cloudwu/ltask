@@ -44,5 +44,5 @@ boot()
 Test
 ====
 ```
-lua main.lua examples/timer/config
+lua test.lua
 ```

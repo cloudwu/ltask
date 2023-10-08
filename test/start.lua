@@ -4,15 +4,13 @@ local ltask = require "ltask"
 local SERVICE_ROOT <const> = 1
 local MESSSAGE_SYSTEM <const> = 0
 
-local config = {}
+local config
 
 local function searchpath(name)
 	return assert(package.searchpath(name, config.service_path))
 end
 
 local function init_config()
-	local config_file = assert(arg[1])
-	assert(loadfile(config_file, "t", config))()
 	config.lua_path = config.lua_path or package.path
 	config.lua_cpath = config.lua_cpath or package.cpath
 	config.init_service = config.init_service or ("@" .. searchpath "service")
@@ -59,22 +57,9 @@ local function toclose(f)
 	return setmetatable({}, {__close=f})
 end
 
-init_config()
-boot.init(config)
-local _ <close> = toclose(boot.deinit)
-boot.init_timer()
-boot.init_socket()
-
-local id = 0
-for i, t in ipairs(config.exclusive) do
-	local label = type(t) == "table" and t[1] or t
-	id = i + 1
-	exclusive_thread(label, id)
-end
-
 -- test exclusive transfer
 
-local function dummy_service()
+local function dummy_service(id)
 	local dummy = [[
 local exclusive = require "ltask.exclusive"
 
@@ -97,9 +82,24 @@ end
 	boot.new_thread(sid)
 end
 
--- dummy_service()
+local function start(cfg)
+	config = cfg
+	init_config()
+	boot.init(config)
+	local _ <close> = toclose(boot.deinit)
+	boot.init_timer()
+	boot.init_socket()
+	
+	local id = 0
+	for i, t in ipairs(config.exclusive) do
+		local label = type(t) == "table" and t[1] or t
+		id = i + 1
+		exclusive_thread(label, id)
+	end
+	-- dummy_service(id)
+	bootstrap()	-- launch root
+	print "ltask Start"
+	boot.run()
+end
 
-bootstrap()	-- launch root
-
-print "ltask Start"
-boot.run()
+return start
