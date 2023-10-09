@@ -897,10 +897,10 @@ preinit_thread(void *args) {
 			int r = lua_resume(L, NULL, 1, &result);
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
-#ifdef DEBUGLOG
-					struct debug_logger * logger = dlog_new("PREINIT", -1);
-					debug_printf(logger, "preinit error : %s", lua_tostring(L, -1));
-#endif
+					lua_pushfstring(L, "Preinit error: %s", lua_tostring(L, -1));
+					luaL_traceback(L, L, lua_tostring(L, -1), 0);
+					lua_writestringerror("%s\n", lua_tostring(L, -1));
+					lua_pop(L, 2);
 				}
 				L = NULL;
 			} else {
