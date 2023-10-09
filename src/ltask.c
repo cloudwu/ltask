@@ -897,10 +897,15 @@ preinit_thread(void *args) {
 			int r = lua_resume(L, NULL, 1, &result);
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
-					lua_pushfstring(L, "Preinit error: %s", lua_tostring(L, -1));
-					luaL_traceback(L, L, lua_tostring(L, -1), 0);
-					lua_writestringerror("%s\n", lua_tostring(L, -1));
-					lua_pop(L, 2);
+					if (!lua_checkstack(L, LUA_MINSTACK)) {
+						lua_writestringerror("%s\n", lua_tostring(L, -1));
+						lua_pop(L, 1);
+					} else {
+						lua_pushfstring(L, "Preinit error: %s", lua_tostring(L, -1));
+						luaL_traceback(L, L, lua_tostring(L, -1), 0);
+						lua_writestringerror("%s\n", lua_tostring(L, -1));
+						lua_pop(L, 2);
+					}
 				}
 				L = NULL;
 			} else {
