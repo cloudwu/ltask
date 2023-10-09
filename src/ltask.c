@@ -839,17 +839,11 @@ ltask_deinit(lua_State *L) {
 	return 0;
 }
 
-struct error_handle {
-	atomic_int ref;
-	char * errormsg;
-};
-
 struct preload_thread {
 	lua_State *L;
 	void *thread;
 	struct service *service;
 	atomic_int term;
-	struct error_handle *err;
 };
 
 static void
@@ -892,64 +886,6 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 	}
 }
 
-struct error_handle_box {
-	struct error_handle *handle;
-};
-
-static void
-delete_error_handle(struct error_handle *eh) {
-	if (atomic_int_dec(&eh->ref) == 0) {
-		free(eh->errormsg);
-		eh->errormsg = NULL;
-		free(eh);
-	}
-}
-
-static int
-lclose_error_handle(lua_State *L) {
-	struct error_handle_box * box = lua_touserdata(L, 1);
-	if (box->handle) {
-		delete_error_handle(box->handle);
-		box->handle = NULL;
-	}
-	return 0;
-}
-
-static int
-lcheck_error_handle(lua_State *L) {
-	struct error_handle_box * box = lua_touserdata(L, 1);
-	if (box->handle) {
-		if (atomic_int_load(&box->handle->ref) == 1) {
-			if (box->handle->errormsg == NULL) {
-				lua_pushboolean(L, 1);
-			} else {
-				lua_pushstring(L, box->handle->errormsg);
-			}
-			return 1;
-		}
-	}
-	return 0;
-}
-
-static int
-ltask_errorhandle(lua_State *L) {
-	struct error_handle * eh = (struct error_handle *)malloc(sizeof(*eh));
-	struct error_handle_box * box = lua_newuserdatauv(L, sizeof(*box), 0);
-	box->handle = eh;
-	atomic_int_init(&eh->ref, 1);
-	eh->errormsg = NULL;
-	if (luaL_newmetatable(L, "LTASK_ERROR_HANDLE")) {
-		luaL_Reg l[] = {
-			{ "__gc", lclose_error_handle },
-			{ "__call", lcheck_error_handle },
-			{ NULL, NULL },
-		};
-		luaL_setfuncs(L, l, 0);
-	}
-	lua_setmetatable(L, -2);
-	return 1;
-}
-
 static void
 preinit_thread(void *args) {
 	struct preload_thread * t = (struct preload_thread *)args;
@@ -961,32 +897,18 @@ preinit_thread(void *args) {
 			int r = lua_resume(L, NULL, 1, &result);
 			if (r != LUA_YIELD) {
 				if (r != LUA_OK) {
-					size_t sz;
-					const char * errmsg = lua_tolstring(L, -1, &sz);
 #ifdef DEBUGLOG
 					struct debug_logger * logger = dlog_new("PREINIT", -1);
-					debug_printf(logger, "preinit error : %s", errmsg);
+					debug_printf(logger, "preinit error : %s", lua_tostring(L, -1));
 #endif
-					if (t->err) {
-						t->err->errormsg = malloc(sz + 1);
-						memcpy(t->err->errormsg, errmsg, sz+1);
-					}
 				}
 				L = NULL;
-				if (t->err) {
-					delete_error_handle(t->err);
-					t->err = NULL;
-				}
 			} else {
 				lua_pop(L, result);
 			}
 		} else {
 			sys_sleep(1);
 		}
-	}
-	if (t->err) {
-		delete_error_handle(t->err);
-		t->err = NULL;
 	}
 }
 
@@ -996,16 +918,10 @@ ltask_preinit(lua_State *L) {
 	p->L = NULL;
 	p->thread = NULL;
 	p->service = NULL;
-	p->err = NULL;
 	atomic_int_init(&p->term, 0);
 	const char * source = luaL_checkstring(L, 1);
 	p->service = service_preinit((void *)L, source);
 	p->L = service_preinit_L(p->service);
-	if (lua_type(L, 2) == LUA_TUSERDATA) {
-		struct error_handle_box *box = (struct error_handle_box *)luaL_checkudata(L, 2, "LTASK_ERROR_HANDLE");
-		atomic_int_inc(&box->handle->ref);
-		p->err = box->handle;
-	}
 
 	struct thread th;
 	th.func = preinit_thread;
@@ -1150,7 +1066,6 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "init_socket", ltask_init_socket },
 		{ "pushlog", ltask_boot_pushlog },
 		{ "preinit", ltask_preinit },
-		{ "errorhandle", ltask_errorhandle },
 		{ "new_service_preinit", ltask_newservice_preinit },
 		{ NULL, NULL },
 	};
