@@ -3,7 +3,7 @@ ltask: Yet another lua task library
 
 ltask is inspired by skynet (https://github.com/cloudwu/skynet) , but it's a library rather than a framework.
 
-It implement an n:m scheduler , so that you can run M lua VMs on N OS threads. You can have a look to main.lua , it launchs an exclusive thread for timer messages and some work threads to serve some lua services. 
+It implement an n:m scheduler , so that you can run M lua VMs on N OS threads.
 
 Each lua service (an indepentent lua VM) works in request/response mode, they use message channels to inter-communicate.
 

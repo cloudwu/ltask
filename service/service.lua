@@ -75,6 +75,7 @@ local session_id = 1
 local session_waiting = {}
 local wakeup_queue = {}
 local exclusive_service = false
+local exclusive_send = false
 
 ----- error handling ------
 
@@ -908,6 +909,7 @@ local function init_exclusive()
 	local blocked_message
 	local retry_blocked_message
 	local function post_message(address, session, type, msg, sz)
+		exclusive_send = true
 		if not exclusive.send(address, session, type, msg, sz) then
 			if blocked_message then
 				local n = #blocked_message
@@ -1036,6 +1038,10 @@ local function dispatch_wakeup()
 	while #wakeup_queue > 0 do
 		local s = table.remove(wakeup_queue, 1)
 		wakeup_session(table.unpack(s))
+	end
+	if exclusive_send then
+		yield_service()
+		exclusive_send = false
 	end
 end
 
