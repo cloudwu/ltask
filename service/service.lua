@@ -904,8 +904,8 @@ local yieldable_require; do
 end
 
 local function init_exclusive()
-	exclusive_service = true
 	local exclusive = require "ltask.exclusive"
+	exclusive_service = exclusive.scheduling
 	local blocked_message
 	local retry_blocked_message
 	local function post_message(address, session, type, msg, sz)
@@ -1040,7 +1040,7 @@ local function dispatch_wakeup()
 		wakeup_session(table.unpack(s))
 	end
 	if exclusive_send then
-		yield_service()
+		exclusive_service()	-- send messages
 		exclusive_send = false
 	end
 end
