@@ -755,6 +755,7 @@ do
 			idx = idx + 1
 			return task[r], r
 		end
+		local waiting = false
 		local function run_task(t, i)
 			if t == nil then
 				return
@@ -762,7 +763,11 @@ do
 			resp(i, pcall(t[1], table.unpack(t, 2)))
 			n = n - 1
 			if n == 0 then
-				ltask.wakeup(ret)
+				if waiting then
+					ltask.wakeup(ret)
+				else
+					waiting = true
+				end
 			else
 				return run_task(get_task())
 			end
@@ -776,7 +781,9 @@ do
 				break
 			end
 		end
-		ltask.wait(ret)
+		if not waiting then
+			ltask.wait(ret)
+		end
 		return ret
 	end
 
