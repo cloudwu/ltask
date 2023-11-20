@@ -749,14 +749,32 @@ do
 		local function resp(i, ...)
 			ret[i] = { ... }
 		end
-		for i, t in ipairs(task) do
-			ltask.fork(function()
-				resp(i, pcall(t[1], table.unpack(t, 2)))
-				n = n - 1
-				if n == 0 then
-					ltask.wakeup(ret)
-				end
-			end)
+		local idx = 1
+		local function get_task()
+			local r = idx
+			idx = idx + 1
+			return task[r], r
+		end
+		local function run_task(t, i)
+			if t == nil then
+				return
+			end
+			resp(i, pcall(t[1], table.unpack(t, 2)))
+			n = n - 1
+			if n == 0 then
+				ltask.wakeup(ret)
+			else
+				return run_task(get_task())
+			end
+		end
+		while true do
+			local t, i = get_task()
+			if t then
+				ltask.fork(run_task, t, i)
+				ltask.sleep(0)
+			else
+				break
+			end
 		end
 		ltask.wait(ret)
 		return ret

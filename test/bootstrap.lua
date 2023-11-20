@@ -32,14 +32,16 @@ ltask.send(addr, "exit")
 print(ltask.send(addr, "ping", "SEND"))
 
 local function run_task(what, ti)
-	ltask.sleep(ti)
+	if ti > 0 then
+		ltask.sleep(ti)
+	end
 	return what
 end
 
 local task = {
-	{ run_task, "a", 20 },
-	{ run_task, "b", 10},
-	{ run_task, "c", 0 },
+	{ run_task, "a", 0 },
+	{ run_task, "b", 20},
+	{ run_task, "c", 10 },
 }
 
 for req, resp in ltask.parallel(task) do
