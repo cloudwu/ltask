@@ -755,35 +755,35 @@ do
 			idx = idx + 1
 			return task[r], r
 		end
-		local waiting = false
-		local function run_task(t, i)
-			if t == nil then
-				return
+		local supervisor_running = false
+		local run_task	-- function
+		local function next_task()
+			local i = idx
+			idx = idx + 1
+			local t = task[i]
+			if t then
+				run_task(t, i)
+			end
+		end
+		local function run_supervisor()
+			supervisor_running = false	-- only one supervisor
+			next_task()
+		end
+		function run_task(t, i)
+			if not supervisor_running then
+				supervisor_running = true
+				ltask.fork(run_supervisor)
 			end
 			resp(i, pcall(t[1], table.unpack(t, 2)))
 			n = n - 1
 			if n == 0 then
-				if waiting then
-					ltask.wakeup(ret)
-				else
-					waiting = true
-				end
+				ltask.wakeup(ret)
 			else
-				return run_task(get_task())
+				return next_task()
 			end
 		end
-		while true do
-			local t, i = get_task()
-			if t then
-				ltask.fork(run_task, t, i)
-				ltask.sleep(0)
-			else
-				break
-			end
-		end
-		if not waiting then
-			ltask.wait(ret)
-		end
+		ltask.fork(next_task)
+		ltask.wait(ret)
 		return ret
 	end
 
