@@ -73,16 +73,11 @@ local function writelog()
 		end
 		local tsec = ti // 100
 		local msec = ti % 100
-		local t = table.pack(ltask.unpack_remove(msg, sz))
-		local str = {}
-		for i = 1, t.n do
-			str[#str+1] = tostring(t[i])
-		end
-		local message = table.concat(str, "\t")
+		local level, message = ltask.unpack_remove(msg, sz)
 		message = string.gsub(message, "%$%{([^}]*)%}", function (s)
 			return parse(id, s)
 		end)
-		io.write(string.format("[%s.%02d : %-10s]\t%s\n", os.date("%c", tsec), msec, querylabel(id), message))
+		io.write(string.format("[%s.%02d : %-10s][%-5s]\t%s\n", os.date("%c", tsec), msec, querylabel(id), level:upper(), message))
 		flush = true
 	end
 	runtask()
