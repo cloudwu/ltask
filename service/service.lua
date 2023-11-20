@@ -21,11 +21,20 @@ local ltask = require "ltask"
 
 local CURRENT_SERVICE <const> = ltask.self()
 
-function ltask.log(...)
-	ltask.pushlog(ltask.pack(...))
+ltask.log = {}
+for _, level in ipairs {"info","error"} do
+	ltask.log[level] = function (...)
+		local t = table.pack(...)
+		local str = {}
+		for i = 1, t.n do
+			str[#str+1] = tostring(t[i])
+		end
+		local message = table.concat(str, "\t")
+		ltask.pushlog(ltask.pack(level, message))
+	end
 end
 
-ltask.log(string.format("${startup:%s}", ltask.label()))
+ltask.log.info(string.format("${startup:%s}", ltask.label()))
 
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
@@ -304,7 +313,7 @@ local function resume_session(co, ...)
 
 		errobj = traceback(errobj, co)
 		if from == nil or from == 0 or session == 0 then
-			print(tostring(errobj))
+			ltask.log.error(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
 		end
@@ -390,7 +399,7 @@ local ignore_response ; do
 			if type == MESSAGE_ERROR then
 				local errobj = ltask.unpack_remove(msg, sz)
 				errobj = traceback(errobj, session_coroutine_where[session] or "")
-				print(tostring(errobj))
+				ltask.log.error(tostring(errobj))
 			else
 				ltask.remove(msg, sz)
 			end
@@ -1104,7 +1113,7 @@ end
 
 ltask.dispatch_wakeup = dispatch_wakeup
 
-print = ltask.log
+print = ltask.log.info
 
 local function mainloop()
 	while true do
@@ -1117,7 +1126,7 @@ local function mainloop()
 				end
 			else
 				-- s == SCHEDULE_QUIT
-				ltask.log "${quit}"
+				ltask.log.info "${quit}"
 				return
 			end
 		end

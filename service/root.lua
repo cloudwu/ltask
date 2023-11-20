@@ -36,7 +36,7 @@ do
 	local function init_receipt(type, session, msg, sz)
 		if type == MESSAGE_ERROR then
 			local errobj = ltask.unpack_remove(msg, sz)
-			ltask.log("Root fatal:", table.concat(errobj, "\n"))
+			ltask.log.error("Root fatal:", table.concat(errobj, "\n"))
 			writelog()
 			ltask.quit()
 		end
@@ -229,7 +229,7 @@ local function boot()
 		S.spawn(table.unpack(config.bootstrap))
 	end)
 	if not ok then
-		ltask.log("Root init error:", tostring(errobj))
+		ltask.log.error("Root init error:", tostring(errobj))
 	end
 end
 
