@@ -110,7 +110,7 @@ sockevent_open(struct sockevent *e) {
 	if (0 != setsockopt(e->pipe[0], SOL_SOCKET, SO_NOSIGPIPE, (char*)&enable, sizeof(enable))) {
 		goto _error;
 	}
-	if (0 != setsockopt(e->pipe[0], SOL_SOCKET, SO_NOSIGPIPE, (char*)&enable, sizeof(enable))) {
+	if (0 != setsockopt(e->pipe[1], SOL_SOCKET, SO_NOSIGPIPE, (char*)&enable, sizeof(enable))) {
 		goto _error;
 	}
 #endif
