@@ -50,7 +50,7 @@ local function exclusive_thread(label, id)
 end
 
 function print(...)
-	boot.pushlog(ltask.pack(...))
+	boot.pushlog(ltask.pack("info", ...))
 end
 
 local function toclose(f)
