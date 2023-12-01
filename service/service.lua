@@ -939,7 +939,7 @@ end
 
 local function init_exclusive()
 	local exclusive = require "ltask.exclusive"
-	exclusive_service = exclusive.scheduling
+	exclusive_service = exclusive.scheduling()
 	local blocked_message
 	local retry_blocked_message
 	local function post_message(address, session, type, msg, sz)
