@@ -1030,6 +1030,22 @@ ltask_init_root(lua_State *L) {
 }
 
 static int
+pushlog(struct ltask* task, service_id id, void *data, uint32_t sz) {
+	struct logmessage msg;
+	msg.id = id;
+	msg.msg = data;
+	msg.sz = sz;
+	struct timer *TI = task->timer;
+	struct logqueue *q = task->lqueue;
+	if (TI == NULL) {
+		msg.timestamp = 0;
+	} else {
+		msg.timestamp = timer_now(TI);
+	}
+	return logqueue_push(q, &msg);
+}
+
+static int
 ltask_boot_pushlog(lua_State *L) {
 	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
@@ -1482,22 +1498,6 @@ ltask_walltime(lua_State *L) {
 	uint64_t ti = systime_wall();
 	lua_pushinteger(L, ti);
 	return 1;
-}
-
-static int
-pushlog(struct ltask* task, service_id id, void *data, uint32_t sz) {
-	struct logmessage msg;
-	msg.id = id;
-	msg.msg = data;
-	msg.sz = sz;
-	struct timer *TI = task->timer;
-	struct logqueue *q = task->lqueue;
-	if (TI == NULL) {
-		msg.timestamp = 0;
-	} else {
-		msg.timestamp = timer_now(TI);
-	}
-	return logqueue_push(q, &msg);
 }
 
 static int
