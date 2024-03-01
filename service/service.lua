@@ -392,6 +392,59 @@ function ltask.call(address, ...)
 	end
 end
 
+do	-- async object
+	local async = {}	; async.__index = async
+
+	local function still_session(obj, session)
+		local s = obj._sessions
+		s[session] = nil
+		return next(s)
+	end
+
+	function ltask.async()
+		local obj
+		local function wait_func(type, session, msg, sz)
+			-- ignore type
+			ltask.unpack_remove(msg, sz)
+			while still_session(obj, session) do
+				type, session, msg, sz = yield_session()
+				ltask.unpack_remove(msg, sz)
+			end
+
+			if obj._wakeup then
+				ltask.wakeup(obj._wakeup)
+			end
+			return wait_func(yield_session())
+		end
+
+		obj = {
+			_sessions = {},
+			_wait = new_thread(wait_func),
+		}
+		return setmetatable(obj, async)
+	end
+
+	function async:request(address, ...)
+		if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
+			-- service dead
+			return
+		end
+		session_coroutine_suspend_lookup[session_id] = self._wait
+		self._sessions[session_id] = true
+		session_id = session_id + 1
+	end
+
+	function async:wait()
+		if next(self._sessions) then
+			if not self._wakeup then
+				self._wakeup = self
+				ltask.wait(self)
+			end
+		end
+		self._wakeup = nil
+	end
+end
+
 local ignore_response ; do
 	local function no_response_()
 		while true do

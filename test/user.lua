@@ -12,6 +12,13 @@ function S.wait(ti)
 	return ti
 end
 
+function S.req(ti)
+	print ("Wait Req", ti)
+	ltask.sleep(ti)
+	print ("Wait resp", ti)
+	return ti
+end
+
 function S.ping(...)
 	ltask.timeout(10, function() print(1) end)
 	ltask.timeout(20, function() print(2) end)

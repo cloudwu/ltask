@@ -9,6 +9,26 @@ local addr = ltask.spawn("user", "Hello")
 
 print("Spawn user", addr)
 
+-- test async
+
+local async = ltask.async()
+
+async:request( addr, "req", 30 )
+async:request( addr, "req", 10 )
+
+print("Waiting request 1")
+async:wait()
+print("Get request 1")
+
+async:request( addr, "req", 5 )
+async:request( addr, "req", 20 )
+
+print("Waiting request 2")
+async:wait()
+print("Get request 2")
+
+--- test request
+
 local req = ltask.request
 	{ addr, "wait", 30, id = 1 }
 	{ addr, "wait", 20, id = 2 }
@@ -40,8 +60,14 @@ end
 
 local task = {
 	{ run_task, "a", 0 },
-	{ run_task, "b", 20},
-	{ run_task, "c", 10 },
+	{ run_task, "b", 0 },
+	{ run_task, "c", 0 },
+	{ run_task, "d", 0 },
+	{ run_task, "e", 0 },
+	{ run_task, "f", 0 },
+	{ run_task, "g", 0 },
+	{ run_task, "h", 10 },
+	{ run_task, "i", 20 },
 }
 
 for req, resp in ltask.parallel(task) do
