@@ -8,5 +8,5 @@ start {
         "timer",
         "sockevent",
     },
-    debuglog = "log.txt",
+    debuglog = "=", -- stdout
 }

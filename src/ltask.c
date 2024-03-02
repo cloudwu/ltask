@@ -75,20 +75,23 @@ struct service_ud {
 	service_id id;
 };
 
-struct exclusive_thread *
+static inline struct exclusive_thread *
 get_exclusive_thread(struct ltask *task, int thread_id) {
 	if (thread_id < 0 || thread_id >= MAX_EXCLUSIVE)
 		return NULL;
 	return &task->exclusives[thread_id];
 }
 
-struct worker_thread *
-get_worker_thread(struct ltask * task, int thread_id) {
-	thread_id -= MAX_EXCLUSIVE;
-	if (thread_id < 0 || thread_id >= task->config->worker) {
-		return NULL;
+static int
+get_worker_id(struct ltask *task, service_id id) {
+	int total_worker = task->config->worker;
+	int i;
+	for (i=0;i<total_worker;i++) {
+		struct worker_thread * w = &task->workers[i];
+		if (w->running.id == id.id)
+			return i;
 	}
-	return &task->workers[thread_id];
+	return -1;
 }
 
 static inline void
@@ -250,6 +253,23 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 }
 
 static int
+try_binding_thread(struct ltask *task, int job) {
+	service_id id = { job };
+	int worker = service_binding_get(task->services, id);
+	if (worker >= 0) {
+		struct worker_thread * w = &task->workers[worker];
+		if (worker_binding_job(w, id)) {
+			// fail, push back
+			queue_push_int(task->schedule, job);
+		} else {
+			// succ
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static void
 schedule_dispatch(struct ltask *task) {
 	// Step 1 : Collect service_done
 	int done_job_n = 0;
@@ -313,17 +333,36 @@ schedule_dispatch(struct ltask *task) {
 	for (i=0;i<task->config->worker;i++) {
 		if (job == 0) {
 			job = queue_pop_int(task->schedule);
-			if (job == 0) {
-				// No job in the queue
-				break;
+			if (job) {
+				if (!try_binding_thread(task, job)) {
+					// binding succ, get next n
+					debug_printf(task->logger, "Binding %d\n", job);
+					job = 0;
+					int n = queue_length(task->schedule);
+					int j;
+					for (j=0;j<n;j++) {
+						job = queue_pop_int(task->schedule);
+						if (job == 0)
+							break;
+						if (try_binding_thread(task, job)) {
+							break;
+						}
+					}
+				}
 			}
 		}
-		service_id id = { job };
-		if (!worker_assign_job(&task->workers[i], id)) {
-			debug_printf(task->logger, "Assign %x to worker %d", id.id, i);
-			worker_wakeup(&task->workers[i]);
-			++assign_job;
-			job = 0;
+		if (job) {
+			struct worker_thread * w = &task->workers[i];
+			service_id id = { job };
+			service_id assign = worker_assign_job(w, id);
+			if (assign.id != 0) {
+				worker_wakeup(w);
+				debug_printf(task->logger, "Assign %x to worker %d", assign.id, i);
+				if (assign.id == id.id) {
+					++assign_job;
+					job = 0;
+				}
+			}
 		}
 	}
 	if (job != 0) {
@@ -332,7 +371,6 @@ schedule_dispatch(struct ltask *task) {
 	} else {
 		wakeup_sleeping_workers(task, assign_job);
 	}
-	return assign_job;
 }
 
 // 0 succ
@@ -371,7 +409,7 @@ static service_id
 steal_job(struct worker_thread * worker) {
 	int i;
 	for (i=0;i<worker->task->config->worker;i++) {
-		service_id job = worker_get_job(&worker->task->workers[i]);
+		service_id job = worker_steal_job(&worker->task->workers[i], worker->task->services);
 		if (job.id)
 			return job;
 	}
@@ -384,12 +422,16 @@ static int
 schedule_dispatch_worker(struct worker_thread *worker) {
 	schedule_dispatch(worker->task);
 	if (!worker_has_job(worker)) {
-		service_id job = steal_job(worker);
-		if (job.id) {
-			debug_printf(worker->logger, "Steal service %x", job.id);
-			worker_assign_job(worker, job);
-		} else {
-			return 1;
+		service_id id = { 0 };
+		id = worker_assign_job(worker, id);
+		if (id.id == 0) {	// no binding service
+			service_id job = steal_job(worker);
+			if (job.id) {
+				debug_printf(worker->logger, "Steal service %x", job.id);
+				worker_assign_job(worker, job);
+			} else {
+				return 1;
+			}
 		}
 	}
 	return 0;
@@ -509,8 +551,8 @@ thread_worker(void *ud) {
 			w->running = id;
 			int status = service_status_get(P, id);
 			if (status != SERVICE_STATUS_DEAD) {
-				assert(status == SERVICE_STATUS_SCHEDULE);
 				debug_printf(w->logger, "Run service %x", id.id);
+				assert(status == SERVICE_STATUS_SCHEDULE);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				worker_timelog(w, id.id);
 				if (service_resume(P, id, thread_id)) {
@@ -650,7 +692,12 @@ ltask_init(lua_State *L) {
 
 #ifdef DEBUGLOG
 	if (lua_getfield(L, 1, "debuglog") == LUA_TSTRING) {
-		task->logfile = fopen(lua_tostring(L, -1), "w");
+		const char *logfile = lua_tostring(L, -1);
+		if (logfile[0] == '=') {
+			task->logfile = stdout;
+		} else {
+			task->logfile = fopen(logfile, "w");
+		}
 	} else {
 		task->logfile = NULL;
 	}
@@ -1472,6 +1519,36 @@ lself(lua_State *L) {
 }
 
 static int
+lworker(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	int worker = get_worker_id(S->task, S->id);
+	if (worker >= 0) {
+		lua_pushinteger(L, worker);
+		return 1;
+	}
+	return 0;
+}
+
+static int
+lbinding(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	int worker;
+	if (lua_isnoneornil(L, 1)) {
+		// binding current worker
+		worker = get_worker_id(S->task, S->id);
+		if (worker < 0)
+			return luaL_error(L, "Not in a worker thread");
+	} else {
+		worker = luaL_checkinteger(L, 1);
+	}
+	if (worker < 0 || worker >= S->task->config->worker) {
+		return luaL_error(L, "Invalid worker id %d", worker);
+	}
+	service_binding_set(S->task->services, S->id, worker);
+	return 0;
+}
+
+static int
 ltask_now(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	struct timer *TI = S->task->timer;
@@ -1679,6 +1756,8 @@ luaopen_ltask(lua_State *L) {
 		{ "message_receipt", NULL },
 		{ "touch_service", ltask_touch_service },
 		{ "self", lself },
+		{ "worker", lworker },
+		{ "binding", lbinding },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
 		{ "walltime", ltask_walltime },

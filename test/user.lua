@@ -3,6 +3,9 @@ local ltask = require "ltask"
 local S = setmetatable({}, { __gc = function() print "User exit" end } )
 
 print ("User init :", ...)
+local worker = ltask.worker()
+print (string.format("User %d in worker %d", ltask.self(), worker))
+ltask.binding(worker)	-- binding to current worker thread
 
 function S.wait(ti)
 	if ti < 10 then

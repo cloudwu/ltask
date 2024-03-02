@@ -32,6 +32,14 @@ struct time_log {
 
 #endif
 
+#define BINDING_SERVICE_QUEUE 16
+
+struct binding_service {
+	int head;
+	int tail;
+	service_id q[BINDING_SERVICE_QUEUE];
+};
+
 struct worker_thread {
 	struct ltask *task;
 #ifdef DEBUGLOG
@@ -45,6 +53,7 @@ struct worker_thread {
 	int sleeping;
 	int wakeup;
 	struct cond trigger;
+	struct binding_service binding_queue;
 #ifdef TIMELOG
 	struct time_log tlog;
 #endif
@@ -91,6 +100,8 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->term_signal = 0;
 	worker->sleeping = 0;
 	worker->wakeup = 0;
+	worker->binding_queue.head = 0;
+	worker->binding_queue.tail = 0;
 }
 
 static inline void
@@ -130,20 +141,41 @@ worker_destory(struct worker_thread *worker) {
 	cond_release(&worker->trigger);
 }
 
-// Calling by Scheduler, may produce service_ready. 0 : succ
+// Calling by Scheduler. 0 : succ
 static inline int
+worker_binding_job(struct worker_thread *worker, service_id id) {
+	struct binding_service * q = &(worker->binding_queue);
+	if (q->tail - q->head >= BINDING_SERVICE_QUEUE)	// queue full
+		return 1;
+	q->q[q->tail % BINDING_SERVICE_QUEUE] = id;
+	++q->tail;
+	assert(q->tail > 0);
+	return 0;
+}
+
+// Calling by Scheduler, may produce service_ready. 0 : succ
+static inline service_id
 worker_assign_job(struct worker_thread *worker, service_id id) {
 	if (atomic_int_load(&worker->service_ready) == 0) {
+		// try binding queue itself
+		struct binding_service * q = &(worker->binding_queue);
+		if (q->tail != q->head) {
+			id = q->q[q->head % BINDING_SERVICE_QUEUE];
+			++q->head;
+			if (q->head == q->tail)
+				q->head = q->tail = 0;
+		}
 		// only one producer (Woker) except itself (worker_steal_job), so don't need use CAS to set
 		atomic_int_store(&worker->service_ready, id.id);
-		return 0;	
+		return id;
 	} else {
 		// Already has a job
-		return 1;
+		service_id ret = { 0 };
+		return ret;
 	}
 }
 
-// Calling by Scheduler (steal job) or Worker, may consume service_ready
+// Calling by Worker, may consume service_ready
 static inline service_id
 worker_get_job(struct worker_thread *worker) {
 	service_id id = { 0 };
@@ -151,6 +183,25 @@ worker_get_job(struct worker_thread *worker) {
 	if (job) {
 		if (atomic_int_cas(&worker->service_ready, job, 0)) {
 			id.id = job;
+		}
+	}
+	return id;
+}
+
+// Calling by Scheduler, may consume service_ready
+static inline service_id
+worker_steal_job(struct worker_thread *worker, struct service_pool *p) {
+	service_id id = { 0 };
+	int job = atomic_int_load(&worker->service_ready);
+	if (job) {
+		service_id t = { job };
+		int worker_id = service_binding_get(p, t);
+		if (worker_id == worker->worker_id) {
+			// binding job, can't steal
+			return id;
+		}
+		if (atomic_int_cas(&worker->service_ready, job, 0)) {
+			id = t;
 		}
 	}
 	return id;
