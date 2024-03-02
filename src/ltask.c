@@ -1519,7 +1519,7 @@ lself(lua_State *L) {
 }
 
 static int
-lworker(lua_State *L) {
+lworker_id(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	int worker = get_worker_id(S->task, S->id);
 	if (worker >= 0) {
@@ -1530,17 +1530,14 @@ lworker(lua_State *L) {
 }
 
 static int
-lbinding(lua_State *L) {
+lworker_bind(lua_State *L) {
 	const struct service_ud *S = getS(L);
-	int worker;
 	if (lua_isnoneornil(L, 1)) {
-		// binding current worker
-		worker = get_worker_id(S->task, S->id);
-		if (worker < 0)
-			return luaL_error(L, "Not in a worker thread");
-	} else {
-		worker = luaL_checkinteger(L, 1);
+		// unbind
+		service_binding_set(S->task->services, S->id, -1);
+		return 0;
 	}
+	int	worker = luaL_checkinteger(L, 1);
 	if (worker < 0 || worker >= S->task->config->worker) {
 		return luaL_error(L, "Invalid worker id %d", worker);
 	}
@@ -1756,8 +1753,8 @@ luaopen_ltask(lua_State *L) {
 		{ "message_receipt", NULL },
 		{ "touch_service", ltask_touch_service },
 		{ "self", lself },
-		{ "worker", lworker },
-		{ "binding", lbinding },
+		{ "worker_id", lworker_id },
+		{ "worker_bind", lworker_bind },
 		{ "timer_add", ltask_timer_add },
 		{ "now", ltask_now },
 		{ "walltime", ltask_walltime },
