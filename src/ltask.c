@@ -465,18 +465,15 @@ steal_job(struct worker_thread * worker) {
 static int
 schedule_dispatch_worker(struct worker_thread *worker, service_id last_id) {
 	schedule_dispatch(worker->task);
-	if (!worker_has_job(worker)) {
-		service_id id = { 0 };
-		id = worker_assign_job(worker, id);
-		if (id.id == 0 &&	// if last_id not binding to this worker
-			(last_id.id == 0 || service_binding_get(worker->task->services, last_id) != worker->worker_id)) {
-			service_id job = steal_job(worker);
-			if (job.id) {
-				debug_printf(worker->logger, "Steal service %x", job.id);
-				worker_assign_job(worker, job);
-			} else {
-				return 1;
-			}
+	if (!worker_has_job(worker) &&
+		(last_id.id == 0 || service_binding_get(worker->task->services, last_id) != worker->worker_id)) {
+		// last_id not binding to this worker
+		service_id job = steal_job(worker);
+		if (job.id) {
+			debug_printf(worker->logger, "Steal service %x", job.id);
+			atomic_int_store(&worker->service_ready, job.id);
+		} else {
+			return 1;
 		}
 	}
 	return 0;
