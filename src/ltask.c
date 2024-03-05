@@ -252,6 +252,7 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 	}
 }
 
+/*
 static int
 try_binding_thread(struct ltask *task, int job) {
 	service_id id = { job };
@@ -261,13 +262,15 @@ try_binding_thread(struct ltask *task, int job) {
 		if (worker_binding_job(w, id)) {
 			// fail, push back
 			queue_push_int(task->schedule, job);
+			return worker;
 		} else {
 			// succ
 			return 0;
 		}
 	}
-	return 1;
+	return ;
 }
+*/
 
 static void
 schedule_dispatch(struct ltask *task) {
@@ -275,7 +278,8 @@ schedule_dispatch(struct ltask *task) {
 	int done_job_n = 0;
 	service_id done_job[MAX_WORKER];
 	int i;
-	for (i=0;i<task->config->worker;i++) {
+	const int worker_n = task->config->worker;
+	for (i=0;i<worker_n;i++) {
 		service_id job = worker_done_job(&task->workers[i]);
 		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
@@ -328,43 +332,54 @@ schedule_dispatch(struct ltask *task) {
 	// Step 3: Assign task to workers
 
 	int assign_job = 0;
-
+	int try_job = 0;
 	int job = 0;
-	for (i=0;i<task->config->worker;i++) {
+
+	while (i<worker_n && try_job < worker_n) {
 		if (job == 0) {
 			job = queue_pop_int(task->schedule);
-			if (job) {
-				if (!try_binding_thread(task, job)) {
-					// binding succ, get next n
-					debug_printf(task->logger, "Binding %d\n", job);
-					job = 0;
-					int n = queue_length(task->schedule);
-					int j;
-					for (j=0;j<n;j++) {
-						job = queue_pop_int(task->schedule);
-						if (job == 0)
-							break;
-						if (try_binding_thread(task, job)) {
-							break;
-						}
+			if (job == 0)	// no more job
+				break;
+			++try_job;
+		}
+		service_id id = { job };
+		int worker = service_binding_get(task->services, id);
+		if (worker < 0) {
+			// no binding worker
+			while (i < worker_n) {
+				struct worker_thread * w = &task->workers[i];
+				service_id assign = worker_assign_job(w, id);
+				if (assign.id != 0) {
+					// assign succ
+					worker_wakeup(w);
+					debug_printf(task->logger, "Assign %x to worker %d", assign.id, i);
+					if (assign.id == id.id) {
+						++assign_job;
+						job = 0;
+						break;
 					}
 				}
+				// try next worker
+				++i;
 			}
-		}
-		if (job) {
-			struct worker_thread * w = &task->workers[i];
-			service_id id = { job };
-			service_id assign = worker_assign_job(w, id);
-			if (assign.id != 0) {
-				worker_wakeup(w);
-				debug_printf(task->logger, "Assign %x to worker %d", assign.id, i);
-				if (assign.id == id.id) {
-					++assign_job;
-					job = 0;
+		} else {
+			// need to bind worker
+			struct worker_thread * w = &task->workers[worker];
+			if (worker_binding_job(w, id)) {
+				// fail, push back
+				queue_push_int(task->schedule, job);
+			} else {
+				// succ, job in worker's queue
+				service_id assign = worker_assign_job(w, id);
+				if (assign.id != 0) {
+					worker_wakeup(w);
+					debug_printf(task->logger, "Assign binding %x to worker %d", assign.id, worker);
 				}
 			}
+			job = 0;
 		}
 	}
+
 	if (job != 0) {
 		// Push unassigned job back
 		queue_push_int(task->schedule, job);
