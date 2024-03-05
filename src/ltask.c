@@ -334,7 +334,7 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
 			// no binding worker
 			prepare[prepare_n++] = id;
 		} else {
-			struct worker_thread * w = &task->workers[i];
+			struct worker_thread * w = &task->workers[worker];
 			if (worker_binding_job(w, id)) {
 				// worker queue is full
 				queue_push_int(task->schedule, job);
@@ -342,7 +342,7 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
 					worker_wakeup(w);
-					debug_printf(task->logger, "Assign bind %x to worker %d", assign.id, i);
+					debug_printf(task->logger, "Assign bind %x to worker %d", assign.id, worker);
 					--free_slot;
 				}
 			}
