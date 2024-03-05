@@ -52,6 +52,7 @@ struct service {
 	int status;
 	int receipt;
 	int thread_id;
+	int binding_thread;
 	service_id id;
 	char label[32];
 	struct memory_stat stat;
@@ -173,6 +174,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->id.id = id;
 	s->status = SERVICE_STATUS_UNINITIALIZED;
 	s->thread_id = -1;
+	s->binding_thread = -1;
 	s->cpucost = 0;
 	s->clock = 0;
 	*service_slot(p, id) = s;
@@ -746,4 +748,20 @@ service_cpucost(struct service_pool *p, service_id id) {
 	if (S == NULL)
 		return 0;
 	return S->cpucost + systime_thread() - S->clock;
+}
+
+int
+service_binding_get(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return -1;
+	return S->binding_thread;
+}
+
+void
+service_binding_set(struct service_pool *p, service_id id, int worker_thread) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return;
+	S->binding_thread = worker_thread;
 }
