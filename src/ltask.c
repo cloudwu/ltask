@@ -894,7 +894,7 @@ struct preload_thread {
 };
 
 static void
-newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source, struct preload_thread *preinit) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source, struct preload_thread *preinit, int worker_id) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
@@ -913,6 +913,7 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		luaL_error(L, "New service fail : %s", get_error_message(L));
 		return;
 	}
+	service_binding_set(S, id, worker_id);
 	if (service_setlabel(task->services, id, label)) {
 		service_delete(S, id);
 		luaL_error(L, "set label fail");
@@ -992,9 +993,10 @@ ltask_newservice(lua_State *L) {
 	const char *label = luaL_checkstring(L, 1);
 	const char *filename_source = luaL_checkstring(L, 2);
 	unsigned int sid = luaL_optinteger(L, 3, 0);
+	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, label, filename_source, NULL);
+	newservice(L, task, id, label, filename_source, NULL, worker_id);
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -1006,9 +1008,10 @@ ltask_newservice_preinit(lua_State *L) {
 	unsigned int sid = luaL_checkinteger(L, 2);
 	luaL_checktype(L, 3, LUA_TLIGHTUSERDATA);
 	struct preload_thread *preload = (struct preload_thread *)lua_touserdata(L, 3);
+	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, label, NULL, preload);
+	newservice(L, task, id, label, NULL, preload, worker_id);
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -1899,9 +1902,10 @@ ltask_initservice(lua_State *L) {
 	unsigned int sid = luaL_checkinteger(L, 1);
 	const char *label = luaL_checkstring(L, 2);
 	const char *filename_source = luaL_checkstring(L, 3);
+	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = { sid };
-	newservice(L, S->task, id, label, filename_source, NULL);
+	newservice(L, S->task, id, label, filename_source, NULL, worker_id);
 
 	return 0;
 }
