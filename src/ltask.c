@@ -236,47 +236,9 @@ dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 	}
 }
 
-static void
-wakeup_sleeping_workers(struct ltask *task, int jobs) {
-	if (jobs == 0)
-		return;
-	int total_worker = task->config->worker;
-	int active_worker = atomic_int_load(&task->active_worker);
-	int sleeping_worker = total_worker - active_worker;
-	if (sleeping_worker > 0) {
-		int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
-		int i;
-		for (i=0;i<total_worker && wakeup > 0;i++) {
-			wakeup -= worker_wakeup(&task->workers[i]);
-		}
-	}
-}
-
-/*
 static int
-try_binding_thread(struct ltask *task, int job) {
-	service_id id = { job };
-	int worker = service_binding_get(task->services, id);
-	if (worker >= 0) {
-		struct worker_thread * w = &task->workers[worker];
-		if (worker_binding_job(w, id)) {
-			// fail, push back
-			queue_push_int(task->schedule, job);
-			return worker;
-		} else {
-			// succ
-			return 0;
-		}
-	}
-	return ;
-}
-*/
-
-static void
-schedule_dispatch(struct ltask *task) {
-	// Step 1 : Collect service_done
+collect_done_job(struct ltask *task, service_id done_job[]) {
 	int done_job_n = 0;
-	service_id done_job[MAX_WORKER];
 	int i;
 	const int worker_n = task->config->worker;
 	for (i=0;i<worker_n;i++) {
@@ -286,10 +248,13 @@ schedule_dispatch(struct ltask *task) {
 			done_job[done_job_n++] = job;
 		}
 	}
+	return done_job_n;
+}
 
-	// Step 2: Dispatch out message by service_done
-
+static void
+dispath_out_messages(struct ltask *task, const service_id done_job[], int done_job_n) {
 	struct service_pool *P = task->services;
+	int i;
 
 	for (i=0;i<done_job_n;i++) {
 		service_id id = done_job[i];
@@ -328,74 +293,128 @@ schedule_dispatch(struct ltask *task) {
 			}
 		}
 	}
+}
 
-	// Step 3: Assign task to workers
-
-	int assign_job = 0;
-	int try_job = 0;
-	int job = 0;
-
-	i = 0;
-	while (i<worker_n && try_job < worker_n) {
-		if (job == 0) {
-			job = queue_pop_int(task->schedule);
-			if (job == 0)	// no more job
-				break;
-			++try_job;
+static int
+count_freeslot(struct ltask *task) {
+	int i;
+	int free_slot = 0;
+	const int worker_n = task->config->worker;
+	for (i=0;i<worker_n;i++) {
+		struct worker_thread * w = &task->workers[i];
+		if (atomic_int_load(&w->service_ready) == 0) {
+			struct binding_service * q = &(w->binding_queue);
+			if (q->tail == q->head) {
+				++free_slot;
+			} else {
+				service_id id = q->q[q->head % BINDING_SERVICE_QUEUE];
+				++q->head;
+				if (q->head == q->tail)
+					q->head = q->tail = 0;
+				atomic_int_store(&w->service_ready, id.id);
+				worker_wakeup(w);
+				debug_printf(task->logger, "Assign queue %x to worker %d", assign.id, i);
+			}
 		}
+	}
+	return free_slot;
+}
+
+static int
+prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
+	int prepare_n = 0;
+	int i;
+	for (i=0;i<free_slot;i++) {
+		int job = queue_pop_int(task->schedule);
+		if (job == 0)	// no more job
+			break;
 		service_id id = { job };
 		int worker = service_binding_get(task->services, id);
 		if (worker < 0) {
 			// no binding worker
-			while (i < worker_n) {
-				struct worker_thread * w = &task->workers[i];
-				service_id assign = worker_assign_job(w, id);
-				if (assign.id != 0) {
-					// assign succ
-					worker_wakeup(w);
-					debug_printf(task->logger, "Assign %x to worker %d", assign.id, i);
-					if (assign.id == id.id) {
-						++assign_job;
-						job = 0;
-						break;
-					}
-				}
-				// try next worker
-				++i;
-			}
+			prepare[prepare_n++] = id;
 		} else {
-			// need to bind worker
-			struct worker_thread * w = &task->workers[worker];
+			struct worker_thread * w = &task->workers[i];
 			if (worker_binding_job(w, id)) {
-				// fail, push back
+				// worker queue is full
 				queue_push_int(task->schedule, job);
 			} else {
-				// succ, job in worker's queue
-				service_id assign = worker_assign_job(w, id);
-				if (assign.id != 0) {
+				id = worker_assign_job(w, id);
+				if (id.id != 0) {
 					worker_wakeup(w);
-					debug_printf(task->logger, "Assign binding %x to worker %d", assign.id, worker);
+					debug_printf(task->logger, "Assign bind %x to worker %d", assign.id, i);
+					--free_slot;
 				}
 			}
-			job = 0;
 		}
 	}
+	return prepare_n;
+}
 
-	if (job != 0) {
-		// Push unassigned job back
-		queue_push_int(task->schedule, job);
-	} else {
-		for (; i<worker_n; i++) {
-			struct worker_thread * w = &task->workers[i];
-			service_id id = { 0 };
+static int
+assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_n) {
+	int i;
+	int assign_job = 0;
+	int worker_id = 0;
+	const int worker_n = task->config->worker;
+	for (i=0;i<prepare_n;i++) {
+		service_id id = prepare[i];
+		for (;;) {
+			assert(worker_id < worker_n);
+			struct worker_thread * w = &task->workers[worker_id++];
 			service_id assign = worker_assign_job(w, id);
 			if (assign.id != 0) {
 				worker_wakeup(w);
-				debug_printf(task->logger, "Assign binding %x to worker %d", assign.id, i);
+				debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
+				if (assign.id == id.id) {
+					++assign_job;
+					break;	
+				}
 			}
 		}
-		wakeup_sleeping_workers(task, assign_job);
 	}
+	return assign_job;
+}
+
+static void
+wakeup_sleeping_workers(struct ltask *task, int jobs) {
+	if (jobs == 0)
+		return;
+	int total_worker = task->config->worker;
+	int active_worker = atomic_int_load(&task->active_worker);
+	int sleeping_worker = total_worker - active_worker;
+	if (sleeping_worker > 0) {
+		int wakeup = jobs > sleeping_worker ? sleeping_worker : jobs;
+		int i;
+		for (i=0;i<total_worker && wakeup > 0;i++) {
+			wakeup -= worker_wakeup(&task->workers[i]);
+		}
+	}
+}
+
+static void
+schedule_dispatch(struct ltask *task) {
+	// Step 1 : Collect service_done
+	service_id done_job[MAX_WORKER];
+	int done_job_n = collect_done_job(task, done_job);
+
+	// Step 2: Dispatch out message by service_done
+	dispath_out_messages(task, done_job, done_job_n);
+
+	// Step 3: Assign queue task
+	int free_slot = count_freeslot(task);
+
+	// Step 4: Assign task to workers
+
+	service_id prepare[MAX_WORKER];
+	int prepare_n = prepare_task(task, prepare, free_slot);
+
+	// Step 5
+
+	int assign_job = assign_prepare_task(task, prepare, prepare_n);
+
+	// Step 6
+	wakeup_sleeping_workers(task, assign_job);
 }
 
 // 0 succ
