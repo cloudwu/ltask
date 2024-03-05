@@ -335,6 +335,7 @@ schedule_dispatch(struct ltask *task) {
 	int try_job = 0;
 	int job = 0;
 
+	i = 0;
 	while (i<worker_n && try_job < worker_n) {
 		if (job == 0) {
 			job = queue_pop_int(task->schedule);
@@ -384,6 +385,15 @@ schedule_dispatch(struct ltask *task) {
 		// Push unassigned job back
 		queue_push_int(task->schedule, job);
 	} else {
+		for (; i<worker_n; i++) {
+			struct worker_thread * w = &task->workers[i];
+			service_id id = { 0 };
+			service_id assign = worker_assign_job(w, id);
+			if (assign.id != 0) {
+				worker_wakeup(w);
+				debug_printf(task->logger, "Assign binding %x to worker %d", assign.id, i);
+			}
+		}
 		wakeup_sleeping_workers(task, assign_job);
 	}
 }
