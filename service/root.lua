@@ -50,7 +50,11 @@ local multi_wakeup = ltask.multi_wakeup
 local multi_interrupt = ltask.multi_interrupt
 
 local function init_service(address, name, ...)
-	root.init_service(address, name, config.init_service)
+	local worker_id
+	if config.worker_bind then
+		worker_id = config.worker_bind[name]
+	end
+	root.init_service(address, name, config.init_service, worker_id)
 	ltask.syscall(address, "init", {
 		preload = config.preload,
 		lua_path = config.lua_path,
