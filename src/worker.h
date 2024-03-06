@@ -47,6 +47,7 @@ struct worker_thread {
 #endif
 	int worker_id;
 	service_id running;
+	service_id binding;
 	atomic_int service_ready;
 	atomic_int service_done;
 	int term_signal;
@@ -97,6 +98,7 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	atomic_int_init(&worker->service_done, 0);
 	cond_create(&worker->trigger);
 	worker->running.id = 0;
+	worker->binding.id = 0;
 	worker->term_signal = 0;
 	worker->sleeping = 0;
 	worker->wakeup = 0;
