@@ -98,6 +98,7 @@ static inline void
 schedule_back(struct ltask *task, service_id id) {
 	int r = queue_push_int(task->schedule, (int)id.id);
 	// Must succ because task->schedule is large enough.
+	(void)r;
 	assert(r == 0);
 }
 
@@ -357,6 +358,7 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 	int assign_job = 0;
 	int worker_id = 0;
 	const int worker_n = task->config->worker;
+	(void)worker_n;
 	for (i=0;i<prepare_n;i++) {
 		service_id id = prepare[i];
 		for (;;) {

@@ -193,6 +193,7 @@ get_service(struct service_pool *p, service_id id) {
 static void
 replace_service(struct service_pool *p, service_id id, struct service *s) {
 	struct service *S = *service_slot(p, id.id);
+	(void)S;
 	assert(S->id.id == id.id);
 	*service_slot(p, id.id) = s;
 }
