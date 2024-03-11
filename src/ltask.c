@@ -1,5 +1,8 @@
 #define LUA_LIB
 
+//#define DEBUGLOG
+//#define TIMELOG
+
 #include "sockevent.h"
 
 #include <lua.h>
@@ -206,7 +209,10 @@ sending_blocked_mark(struct sending_blocked *S, service_id id) {
 }
 
 static void
-dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
+dispatch_exclusive_sending(struct exclusive_thread *e) {
+	struct queue *sending = e->sending;
+	if (sending == NULL)
+		return;
 	struct ltask *task = e->task;
 	struct service_pool *P = task->services;
 	int len = queue_length(sending);
@@ -234,6 +240,14 @@ dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 		} else {
 			queue_push_ptr(sending, msg);
 		}
+	}
+}
+
+static void
+dispatch_exclusive(struct ltask *task) {
+	int i;
+	for (i=0;i<MAX_EXCLUSIVE;i++) {
+		dispatch_exclusive_sending(&task->exclusives[i]);
 	}
 }
 
@@ -314,7 +328,7 @@ count_freeslot(struct ltask *task) {
 					q->head = q->tail = 0;
 				atomic_int_store(&w->service_ready, id.id);
 				worker_wakeup(w);
-				debug_printf(task->logger, "Assign queue %x to worker %d", assign.id, i);
+				debug_printf(task->logger, "Assign queue %x to worker %d", id.id, i);
 			}
 		}
 	}
@@ -343,7 +357,7 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
 					worker_wakeup(w);
-					debug_printf(task->logger, "Assign bind %x to worker %d", assign.id, worker);
+					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
 				}
 			}
@@ -399,6 +413,9 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 
 static void
 schedule_dispatch(struct ltask *task) {
+	// Step 0 : send message from exclusive
+	dispatch_exclusive(task);
+
 	// Step 1 : Collect service_done
 	service_id done_job[MAX_WORKER];
 	int done_job_n = collect_done_job(task, done_job);
@@ -415,7 +432,6 @@ schedule_dispatch(struct ltask *task) {
 	int prepare_n = prepare_task(task, prepare, free_slot);
 
 	// Step 5
-
 	int assign_job = assign_prepare_task(task, prepare, prepare_n);
 
 	// Step 6
@@ -428,6 +444,9 @@ acquire_scheduler(struct worker_thread * worker) {
 	if (atomic_int_load(&worker->task->schedule_owner) == THREAD_NONE) {
 		if (atomic_int_cas(&worker->task->schedule_owner, THREAD_NONE, THREAD_WORKER(worker->worker_id))) {
 			debug_printf(worker->logger, "Acquire schedule");
+#ifdef TIMELOG
+			worker->schedule_time = systime_thread();
+#endif
 			return 0;
 		}
 	}
@@ -438,20 +457,32 @@ static void
 release_scheduler(struct worker_thread * worker) {
 	assert(atomic_int_load(&worker->task->schedule_owner) == THREAD_WORKER(worker->worker_id));
 	atomic_int_store(&worker->task->schedule_owner, THREAD_NONE);
+#ifdef TIMELOG
+	uint64_t t = systime_thread() - worker->schedule_time;
+	(void)t;
+	debug_printf(worker->logger, "Release schedule %d", (int)t);
+#else
 	debug_printf(worker->logger, "Release schedule");
+#endif
 }
 
-static void
+// 0 succ
+static int
 acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
-	while (!atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {}
-	debug_printf(exclusive->logger, "Acquire schedule");
+	if (atomic_int_load(&exclusive->task->schedule_owner) == THREAD_NONE) {
+		if (atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {
+			debug_printf(exclusive->logger, "Acquire schedule from exclusive");
+			return 0;
+		}
+	}
+	return 1;
 }
 
 static void
 release_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	assert(atomic_int_load(&exclusive->task->schedule_owner) == THREAD_EXCLUSIVE(exclusive->thread_id));
 	atomic_int_store(&exclusive->task->schedule_owner, THREAD_NONE);
-	debug_printf(exclusive->logger, "Release schedule");
+	debug_printf(exclusive->logger, "Release schedule from exclusive");
 }
 
 static service_id
@@ -578,7 +609,6 @@ static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
-	worker_timelog_init(w);
 	atomic_int_inc(&w->task->active_worker);
 	thread_setnamef("ltask!worker-%02d", w->worker_id);
 
@@ -599,9 +629,7 @@ thread_worker(void *ud) {
 				debug_printf(w->logger, "Run service %x", id.id);
 				assert(status == SERVICE_STATUS_SCHEDULE);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
-				worker_timelog(w, id.id);
 				if (service_resume(P, id, thread_id)) {
-					worker_timelog(w, id.id);
 					debug_printf(w->logger, "Service %x quit", id.id);
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
@@ -615,7 +643,6 @@ thread_worker(void *ud) {
 						service_send_signal(P, id);
 					}
 				} else {
-					worker_timelog(w, id.id);
 					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
 			} else {
@@ -651,9 +678,7 @@ thread_worker(void *ud) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
 				debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
-				worker_timelog(w, -1);
 				worker_sleep(w);
-				worker_timelog(w, -1);
 				atomic_int_inc(&w->task->active_worker);
 				debug_printf(w->logger, "Wakeup");
 			}
@@ -666,18 +691,17 @@ thread_worker(void *ud) {
 
 static void
 exclusive_message(struct exclusive_thread *e) {
-	struct service_pool * P = e->task->services;
-	int queue_len = queue_length(e->sending);
-	service_id id = e->service;
-	struct message *message_out = service_message_out(P, id);
-	if (message_out || queue_len > 0) {
-		acquire_scheduler_exclusive(e);
-		if (message_out) {
-			dispatch_out_message(e->task, id, message_out);
+	for (;;) {
+		int queue_len = queue_length(e->sending);
+		if (queue_len > 0) {
+			if (!acquire_scheduler_exclusive(e)) {
+				schedule_dispatch(e->task);
+				release_scheduler_exclusive(e);
+				return;
+			}
+		} else {
+			return;
 		}
-		dispatch_exclusive_sending(e, e->sending);
-		schedule_dispatch(e->task);
-		release_scheduler_exclusive(e);
 	}
 }
 
