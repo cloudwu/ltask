@@ -885,6 +885,12 @@ ltask_run(lua_State *L) {
 	int logthread = 0;
 #endif
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
+	int mainthread = luaL_optinteger(L, 1, -1);
+	if (mainthread >= 0) {
+		if (mainthread >= task->config->worker) {
+			return luaL_error(L, "Invalid mainthread %d", mainthread);
+		}
+	}
 	
 	int ecount = exclusive_count(task);
 	int threads_count = task->config->worker + ecount + logthread;
@@ -905,6 +911,12 @@ ltask_run(lua_State *L) {
 		t[threads_count-1].ud = (void *)task;
 	}
 	sig_init();
+	if (mainthread >= 0) {
+		mainthread += ecount;
+		struct thread tmp = t[mainthread];
+		t[mainthread] = t[0];
+		t[0] = tmp;
+	}
 	thread_join(t, threads_count);
 	if (!logthread) {
 		close_logger(task);
