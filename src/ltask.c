@@ -432,6 +432,7 @@ acquire_scheduler(struct worker_thread * worker) {
 			debug_printf(worker->logger, "Acquire schedule");
 #ifdef TIMELOG
 			worker->schedule_time = systime_thread();
+			++worker->schedule_version;
 #endif
 			return 0;
 		}
@@ -446,8 +447,10 @@ release_scheduler(struct worker_thread * worker) {
 	debug_printf(worker->logger, "Release schedule");
 #ifdef TIMELOG
 	uint64_t t = systime_thread() - worker->schedule_time;
+	--worker->schedule_version;
 	if (t > TIMELOG)
 		printf("Worker %d time = %f\n", worker->worker_id, (float)t/systime_frequency());
+	assert(worker->schedule_version == 0);
 #endif
 }
 
