@@ -1,5 +1,7 @@
 #define LUA_LIB
 
+#define TIMELOG 1000
+
 #include "sockevent.h"
 
 #include <lua.h>
@@ -428,6 +430,9 @@ acquire_scheduler(struct worker_thread * worker) {
 	if (atomic_int_load(&worker->task->schedule_owner) == THREAD_NONE) {
 		if (atomic_int_cas(&worker->task->schedule_owner, THREAD_NONE, THREAD_WORKER(worker->worker_id))) {
 			debug_printf(worker->logger, "Acquire schedule");
+#ifdef TIMELOG
+			worker->schedule_time = systime_thread();
+#endif
 			return 0;
 		}
 	}
@@ -439,6 +444,11 @@ release_scheduler(struct worker_thread * worker) {
 	assert(atomic_int_load(&worker->task->schedule_owner) == THREAD_WORKER(worker->worker_id));
 	atomic_int_store(&worker->task->schedule_owner, THREAD_NONE);
 	debug_printf(worker->logger, "Release schedule");
+#ifdef TIMELOG
+	uint64_t t = systime_thread() - worker->schedule_time;
+	if (t > TIMELOG)
+		printf("Worker %d time = %f\n", worker->worker_id, (float)t/systime_frequency());
+#endif
 }
 
 static void
@@ -578,7 +588,6 @@ static void
 thread_worker(void *ud) {
 	struct worker_thread * w = (struct worker_thread *)ud;
 	struct service_pool * P = w->task->services;
-	worker_timelog_init(w);
 	atomic_int_inc(&w->task->active_worker);
 	thread_setnamef("ltask!worker-%02d", w->worker_id);
 
@@ -599,9 +608,7 @@ thread_worker(void *ud) {
 				debug_printf(w->logger, "Run service %x", id.id);
 				assert(status == SERVICE_STATUS_SCHEDULE);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
-				worker_timelog(w, id.id);
 				if (service_resume(P, id, thread_id)) {
-					worker_timelog(w, id.id);
 					debug_printf(w->logger, "Service %x quit", id.id);
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
@@ -615,7 +622,6 @@ thread_worker(void *ud) {
 						service_send_signal(P, id);
 					}
 				} else {
-					worker_timelog(w, id.id);
 					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
 			} else {
@@ -651,9 +657,7 @@ thread_worker(void *ud) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
 				debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
-				worker_timelog(w, -1);
 				worker_sleep(w);
-				worker_timelog(w, -1);
 				atomic_int_inc(&w->task->active_worker);
 				debug_printf(w->logger, "Wakeup");
 			}
