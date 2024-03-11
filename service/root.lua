@@ -200,7 +200,6 @@ local function init()
 			service_path = config.service_path,
 			name = name,
 			args = args,
-			exclusive = true,
 		}}
 	end
 	for i, name in ipairs(config.preinit or {}) do
@@ -210,7 +209,6 @@ local function init()
 		request:add { id, proto = "system", "init", {
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
-			exclusive = true,
 		}}
 	end
 	for req, resp in request:select() do
