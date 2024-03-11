@@ -1422,7 +1422,7 @@ static void
 acquire_scheduler_by_id(struct ltask * task, int thread_id) {
 	if (thread_id < MAX_EXCLUSIVE) {
 		struct exclusive_thread * e = &task->exclusives[thread_id];
-		acquire_scheduler_exclusive(e);
+		acquire_scheduler_exclusive(e) {}
 	} else {
 		thread_id -= MAX_EXCLUSIVE;
 		assert(thread_id < task->config->worker);
