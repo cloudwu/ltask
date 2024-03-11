@@ -5,7 +5,6 @@ start {
     bootstrap = { "bootstrap" },
     logger = { "logger" },
     exclusive = {
-        "timer",
         "sockevent",
     },
     debuglog = "=", -- stdout

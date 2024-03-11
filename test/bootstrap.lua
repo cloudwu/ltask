@@ -1,10 +1,11 @@
 local ltask = require "ltask"
 
+local timer = ltask.spawn "timer"
+
 local arg = ...
 
 print "Bootstrap Begin"
 print(os.date("%c", (ltask.now())))
-
 local addr = ltask.spawn("user", "Hello")
 
 print("Spawn user", addr)
@@ -75,3 +76,5 @@ for req, resp in ltask.parallel(task) do
 end
 
 print "Bootstrap End"
+
+ltask.send(timer, "exit")

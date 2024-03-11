@@ -1367,6 +1367,54 @@ lexclusive_timer_update(lua_State *L) {
 	return 0;
 }
 
+struct timer_update_ud {
+	lua_State *L;
+	int n;
+	service_id from;
+};
+
+static void
+timer_callback(void *ud, void *arg) {
+	struct timer_update_ud *tu = (struct timer_update_ud *)ud;
+	struct timer_event *event = (arg);
+	lua_State *L = tu->L;
+	struct message m;
+	m.from = tu->from;
+	m.to = event->id;
+	m.session = event->session;
+	m.type = MESSAGE_RESPONSE;
+	m.msg = NULL;
+	m.sz = 0;
+	struct message *msg = message_new(&m);
+	lua_pushlightuserdata(L, msg);
+	int idx = ++tu->n;
+	lua_seti(L, 1, idx);
+}
+
+static int
+ltask_timer_update(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	struct timer *t = S->task->timer;
+	if (t == NULL)
+		return luaL_error(L, "Init timer before bootstrap");
+	if (lua_gettop(L) > 1) {
+		lua_settop(L, 1);
+		luaL_checktype(L, 1, LUA_TTABLE);
+	}
+	struct timer_update_ud tu;
+	tu.L = L;
+	tu.n = 0;
+	tu.from = S->id;
+	timer_update(t, timer_callback, &tu);
+	int n = lua_rawlen(L, 1);
+	int i;
+	for (i=tu.n+1;i<=n;i++) {
+		lua_pushnil(L);
+		lua_seti(L, 1, i);
+	}
+	return 1;
+}
+
 static struct message *
 gen_send_message(lua_State *L, service_id id) {
 	struct message m;
@@ -1416,6 +1464,20 @@ lsend_message(lua_State *L) {
 static inline int
 lsend_message_delay(lua_State *L) {
 	return lsend_message_(L, getSdelay(L));
+}
+
+static int
+lsend_message_handle(lua_State *L) {
+	const struct service_ud *S = getSup(L);
+	struct message *msg = lua_touserdata(L, 1);
+	if (msg == NULL)
+		return luaL_error(L, "Invalid message handle");
+	if (service_send_message(S->task->services, S->id, msg)) {
+		// error
+		message_delete(msg);
+		return luaL_error(L, "Can't send message handle");
+	}
+	return 0;
 }
 
 static void
@@ -1845,6 +1907,8 @@ luaopen_ltask(lua_State *L) {
 		{ "worker_id", lworker_id },
 		{ "worker_bind", lworker_bind },
 		{ "timer_add", ltask_timer_add },
+		{ "timer_update", ltask_timer_update },
+		{ "timer_sleep", lexclusive_sleep },
 		{ "now", ltask_now },
 		{ "walltime", ltask_walltime },
 		{ "pushlog", ltask_pushlog },
@@ -1870,6 +1934,7 @@ luaopen_ltask(lua_State *L) {
 			{ "send_message_direct", lsend_message_direct },
 			{ "recv_message", lrecv_message },
 			{ "message_receipt", lmessage_receipt },
+			{ "send_message_handle", lsend_message_handle },
 			{ NULL, NULL },
 		};
 
