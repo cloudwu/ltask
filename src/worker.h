@@ -36,7 +36,6 @@ struct worker_thread {
 	struct cond trigger;
 	struct binding_service binding_queue;
 	uint64_t schedule_time;
-	uint64_t schedule_version;
 };
 
 static inline void
@@ -56,7 +55,6 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->wakeup = 0;
 	worker->binding_queue.head = 0;
 	worker->binding_queue.tail = 0;
-	worker->schedule_version = 0;
 }
 
 static inline void
