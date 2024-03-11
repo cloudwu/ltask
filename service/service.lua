@@ -83,8 +83,6 @@ local session_id = 1
 
 local session_waiting = {}
 local wakeup_queue = {}
-local exclusive_service = false
-local exclusive_send = false
 
 ----- error handling ------
 
@@ -294,6 +292,59 @@ function ltask.error(addr, session, errobj)
 				report_error(addr, session, errobj)
 			end)
 		end
+	end
+end
+
+local exclusive_service = false
+local exclusive_send = false
+local is_exclusive <const> = ltask.is_exclusive()
+
+if is_exclusive then
+	local exclusive = require "ltask.exclusive"
+	exclusive_service = exclusive.scheduling()
+	local blocked_message
+	local retry_blocked_message
+	local function post_message(address, session, type, msg, sz)
+		exclusive_send = true
+		if not exclusive.send(address, session, type, msg, sz) then
+			if blocked_message then
+				local n = #blocked_message
+				blocked_message[n+1] = address
+				blocked_message[n+2] = session
+				blocked_message[n+3] = type
+				blocked_message[n+4] = msg or false
+				blocked_message[n+5] = sz or false
+			else
+				blocked_message = { address, session, type, msg or false, sz or false }
+				ltask.fork(retry_blocked_message)
+			end
+		end
+	end
+	function retry_blocked_message()
+		ltask.sleep(0)
+		if not blocked_message then
+			return
+		end
+		local blocked = blocked_message
+		blocked_message = nil
+		for i = 1, #blocked, 5 do
+			local address = blocked[i]
+			local session = blocked[i+1]
+			local type    = blocked[i+2]
+			local msg     = blocked[i+3] or nil
+			local sz      = blocked[i+4] or nil
+			post_message(address, session, type, msg, sz)
+		end
+	end
+	function ltask.post_message(address, session, type, msg, sz)
+		post_message(address, session, type, msg, sz)
+		return true
+	end
+	function ltask.error(address, session, errobj)
+		if session == 0 then
+			return
+		end
+		post_message(address, session, MESSAGE_ERROR, ltask.pack(errobj))
 	end
 end
 
@@ -885,7 +936,7 @@ end
 local quit
 
 function ltask.quit()
-	if not exclusive_service then
+	if not is_exclusive then
 		ltask.fork(function ()
 			for co, addr in pairs(session_coroutine_address) do
 				local session = session_coroutine_response[co]
@@ -990,55 +1041,6 @@ local yieldable_require; do
 	end
 end
 
-local function init_exclusive()
-	local exclusive = require "ltask.exclusive"
-	exclusive_service = exclusive.scheduling()
-	local blocked_message
-	local retry_blocked_message
-	local function post_message(address, session, type, msg, sz)
-		exclusive_send = true
-		if not exclusive.send(address, session, type, msg, sz) then
-			if blocked_message then
-				local n = #blocked_message
-				blocked_message[n+1] = address
-				blocked_message[n+2] = session
-				blocked_message[n+3] = type
-				blocked_message[n+4] = msg or false
-				blocked_message[n+5] = sz or false
-			else
-				blocked_message = { address, session, type, msg or false, sz or false }
-				ltask.fork(retry_blocked_message)
-			end
-		end
-	end
-	function retry_blocked_message()
-		ltask.sleep(0)
-		if not blocked_message then
-			return
-		end
-		local blocked = blocked_message
-		blocked_message = nil
-		for i = 1, #blocked, 5 do
-			local address = blocked[i]
-			local session = blocked[i+1]
-			local type    = blocked[i+2]
-			local msg     = blocked[i+3] or nil
-			local sz      = blocked[i+4] or nil
-			post_message(address, session, type, msg, sz)
-		end
-	end
-	function ltask.post_message(address, session, type, msg, sz)
-		post_message(address, session, type, msg, sz)
-		return true
-	end
-	function ltask.error(address, session, errobj)
-		if session == 0 then
-			return
-		end
-		post_message(address, session, MESSAGE_ERROR, ltask.pack(errobj))
-	end
-end
-
 local function sys_service_init(t)
 	-- The first system message
 	_G.require = yieldable_require
@@ -1058,15 +1060,9 @@ local function sys_service_init(t)
 	if t.name then
 		local filename = assert(package.searchpath(t.name, t.service_path))
 		local f = assert(loadfile(filename))
-		if t.exclusive then
-			init_exclusive()
-		end
 		local handler = f(table.unpack(t.args))
 		ltask.dispatch(handler)
 	else
-		if t.exclusive then
-			init_exclusive()
-		end
 	end
 	if service == nil then
 		ltask.quit()
