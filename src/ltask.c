@@ -208,7 +208,10 @@ sending_blocked_mark(struct sending_blocked *S, service_id id) {
 }
 
 static void
-dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
+dispatch_exclusive_sending(struct exclusive_thread *e) {
+	struct queue *sending = e->sending;
+	if (sending == NULL)
+		return;
 	struct ltask *task = e->task;
 	struct service_pool *P = task->services;
 	int len = queue_length(sending);
@@ -236,6 +239,14 @@ dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 		} else {
 			queue_push_ptr(sending, msg);
 		}
+	}
+}
+
+static void
+dispatch_exclusive(struct ltask *task) {
+	int i;
+	for (i=0;i<MAX_EXCLUSIVE;i++) {
+		dispatch_exclusive_sending(&task->exclusives[i]);
 	}
 }
 
@@ -417,10 +428,12 @@ schedule_dispatch(struct ltask *task) {
 	int prepare_n = prepare_task(task, prepare, free_slot);
 
 	// Step 5
-
 	int assign_job = assign_prepare_task(task, prepare, prepare_n);
 
-	// Step 6
+	// Step 6 : send message from exclusive
+	dispatch_exclusive(task);
+
+	// Step 7
 	wakeup_sleeping_workers(task, assign_job);
 }
 
@@ -452,17 +465,23 @@ release_scheduler(struct worker_thread * worker) {
 #endif
 }
 
-static void
+// 0 succ
+static int
 acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
-	while (!atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {}
-	debug_printf(exclusive->logger, "Acquire schedule");
+	if (atomic_int_load(&exclusive->task->schedule_owner) == THREAD_NONE) {
+		if (atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {
+			debug_printf(exclusive->logger, "Acquire schedule from exclusive");
+			return 0;
+		}
+	}
+	return 1;
 }
 
 static void
 release_scheduler_exclusive(struct exclusive_thread * exclusive) {
 	assert(atomic_int_load(&exclusive->task->schedule_owner) == THREAD_EXCLUSIVE(exclusive->thread_id));
 	atomic_int_store(&exclusive->task->schedule_owner, THREAD_NONE);
-	debug_printf(exclusive->logger, "Release schedule");
+	debug_printf(exclusive->logger, "Release schedule from exclusive");
 }
 
 static service_id
@@ -671,18 +690,12 @@ thread_worker(void *ud) {
 
 static void
 exclusive_message(struct exclusive_thread *e) {
-	struct service_pool * P = e->task->services;
 	int queue_len = queue_length(e->sending);
-	service_id id = e->service;
-	struct message *message_out = service_message_out(P, id);
-	if (message_out || queue_len > 0) {
-		acquire_scheduler_exclusive(e);
-		if (message_out) {
-			dispatch_out_message(e->task, id, message_out);
+	if (queue_len > 0) {
+		if (!acquire_scheduler_exclusive(e)) {
+			schedule_dispatch(e->task);
+			release_scheduler_exclusive(e);
 		}
-		dispatch_exclusive_sending(e, e->sending);
-		schedule_dispatch(e->task);
-		release_scheduler_exclusive(e);
 	}
 }
 
