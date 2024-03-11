@@ -1,6 +1,7 @@
 #define LUA_LIB
 
-#define TIMELOG
+//#define DEBUGLOG
+//#define TIMELOG
 
 #include "sockevent.h"
 
@@ -327,7 +328,7 @@ count_freeslot(struct ltask *task) {
 					q->head = q->tail = 0;
 				atomic_int_store(&w->service_ready, id.id);
 				worker_wakeup(w);
-				debug_printf(task->logger, "Assign queue %x to worker %d", assign.id, i);
+				debug_printf(task->logger, "Assign queue %x to worker %d", id.id, i);
 			}
 		}
 	}
@@ -356,7 +357,7 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
 					worker_wakeup(w);
-					debug_printf(task->logger, "Assign bind %x to worker %d", assign.id, worker);
+					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
 				}
 			}
@@ -412,6 +413,9 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 
 static void
 schedule_dispatch(struct ltask *task) {
+	// Step 0 : send message from exclusive
+	dispatch_exclusive(task);
+
 	// Step 1 : Collect service_done
 	service_id done_job[MAX_WORKER];
 	int done_job_n = collect_done_job(task, done_job);
@@ -430,10 +434,7 @@ schedule_dispatch(struct ltask *task) {
 	// Step 5
 	int assign_job = assign_prepare_task(task, prepare, prepare_n);
 
-	// Step 6 : send message from exclusive
-	dispatch_exclusive(task);
-
-	// Step 7
+	// Step 6
 	wakeup_sleeping_workers(task, assign_job);
 }
 
@@ -690,11 +691,16 @@ thread_worker(void *ud) {
 
 static void
 exclusive_message(struct exclusive_thread *e) {
-	int queue_len = queue_length(e->sending);
-	if (queue_len > 0) {
-		if (!acquire_scheduler_exclusive(e)) {
-			schedule_dispatch(e->task);
-			release_scheduler_exclusive(e);
+	for (;;) {
+		int queue_len = queue_length(e->sending);
+		if (queue_len > 0) {
+			if (!acquire_scheduler_exclusive(e)) {
+				schedule_dispatch(e->task);
+				release_scheduler_exclusive(e);
+				return;
+			}
+		} else {
+			return;
 		}
 	}
 }
