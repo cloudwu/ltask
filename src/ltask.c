@@ -372,20 +372,26 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 	int assign_job = 0;
 	int worker_id = 0;
 	const int worker_n = task->config->worker;
-	(void)worker_n;
+	int use_binding = 0;
 	for (i=0;i<prepare_n;i++) {
 		service_id id = prepare[i];
 		for (;;) {
-			assert(worker_id < worker_n);
 			struct worker_thread * w = &task->workers[worker_id++];
-			service_id assign = worker_assign_job(w, id);
-			if (assign.id != 0) {
-				worker_wakeup(w);
-				debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
-				if (assign.id == id.id) {
-					++assign_job;
-					break;	
+			if (w->binding.id == 0 || use_binding) {
+				service_id assign = worker_assign_job(w, id);
+				if (assign.id != 0) {
+					worker_wakeup(w);
+					debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
+					if (assign.id == id.id) {
+						++assign_job;
+						break;
+					}
 				}
+			}
+			if (worker_id >= worker_n) {
+				assert(use_binding == 0);
+				use_binding = 1;
+				worker_id = 0;
 			}
 		}
 	}
