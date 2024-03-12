@@ -628,6 +628,7 @@ thread_worker(void *ud) {
 			break;
 		}
 		service_id id = worker_get_job(w);
+		int dead = 0;
 		if (id.id) {
 			w->running = id;
 			int status = service_status_get(P, id);
@@ -636,6 +637,7 @@ thread_worker(void *ud) {
 				assert(status == SERVICE_STATUS_SCHEDULE);
 				service_status_set(P, id, SERVICE_STATUS_RUNNING);
 				if (service_resume(P, id, thread_id)) {
+					dead = 1;
 					debug_printf(w->logger, "Service %x quit", id.id);
 					service_status_set(P, id, SERVICE_STATUS_DEAD);
 					if (id.id == SERVICE_ID_ROOT) {
@@ -664,9 +666,11 @@ thread_worker(void *ud) {
 						while (worker_complete_job(w)) {}	// CAS may fail spuriously
 					}
 					if (service_binding_get(P, id) == w->worker_id) {
-						w->binding = id;
-					} else {
-						w->binding.id = 0;
+						if (dead) {
+							w->binding.id = 0;
+						} else {
+							w->binding = id;
+						}
 					}
 					schedule_dispatch_worker(w);
 					release_scheduler(w);
