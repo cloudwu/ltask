@@ -91,8 +91,7 @@ local function start(cfg)
 	boot.init_socket()
 
 	local id = 0
-	for i, t in ipairs(config.exclusive) do
-		local label = type(t) == "table" and t[1] or t
+	for i, label in ipairs(config.exclusive) do
 		id = i + 1
 		exclusive_thread(label, id)
 	end
