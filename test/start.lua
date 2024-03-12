@@ -17,7 +17,7 @@ local function init_config()
 end
 
 local function new_service(label, id)
-	local sid = boot.new_service(label, config.init_service, id)
+	local sid = assert(boot.new_service(label, config.init_service, id))
 	assert(sid == id)
 	return sid
 end
@@ -77,7 +77,7 @@ end
 	local label = "Dummy"
 	os.execute "sleep 1"
 
-	local sid = boot.new_service_preinit(label, id + 1, p)
+	local sid = assert(boot.new_service_preinit(label, id + 1, p))
 	assert(id + 1 == sid)
 	boot.new_thread(sid)
 end
@@ -89,7 +89,7 @@ local function start(cfg)
 	local _ <close> = toclose(boot.deinit)
 	boot.init_timer()
 	boot.init_socket()
-	
+
 	local id = 0
 	for i, t in ipairs(config.exclusive) do
 		local label = type(t) == "table" and t[1] or t

@@ -979,7 +979,8 @@ struct preload_thread {
 	atomic_int term;
 };
 
-static void
+// 0 : succ
+static int
 newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source, struct preload_thread *preinit, int worker_id) {
 	struct service_ud ud;
 	ud.task = task;
@@ -996,14 +997,14 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 
 	if (service_init(S, id, (void *)&ud, sizeof(ud), L, preS) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
 		service_delete(S, id);
-		luaL_error(L, "New service fail : %s", get_error_message(L));
-		return;
+		lua_pushfstring(L, "New service fail : %s", get_error_message(L));
+		return -1;
 	}
 	service_binding_set(S, id, worker_id);
 	if (service_setlabel(task->services, id, label)) {
 		service_delete(S, id);
-		luaL_error(L, "set label fail");
-		return;
+		lua_pushliteral(L, "set label fail");
+		return -1;
 	}
 	if (filename_source) {
 		const char * err = NULL;
@@ -1015,9 +1016,10 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		if (err) {
 			lua_pushstring(L, err);
 			service_delete(S, id);
-			lua_error(L);
+			return -1;
 		}
 	}
+	return 0;
 }
 
 static void
@@ -1082,7 +1084,11 @@ ltask_newservice(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, label, filename_source, NULL, worker_id);
+	if (newservice(L, task, id, label, filename_source, NULL, worker_id)) {
+		lua_pushboolean(L, 0);
+		lua_insert(L, -2);
+		return 2;
+	}
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -1097,7 +1103,11 @@ ltask_newservice_preinit(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	newservice(L, task, id, label, NULL, preload, worker_id);
+	if (newservice(L, task, id, label, NULL, preload, worker_id)) {
+		lua_pushboolean(L, 0);
+		lua_insert(L, -2);
+		return 2;
+	}
 	lua_pushinteger(L, id.id);
 	return 1;
 }
@@ -1989,9 +1999,14 @@ ltask_initservice(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = { sid };
-	newservice(L, S->task, id, label, filename_source, NULL, worker_id);
-
-	return 0;
+	if (newservice(L, S->task, id, label, filename_source, NULL, worker_id)) {
+		lua_pushboolean(L, 0);
+		lua_insert(L, -2);
+		return 2;
+	} else {
+		lua_pushboolean(L, 1);
+		return 1;
+	}
 }
 
 static int

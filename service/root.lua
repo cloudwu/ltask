@@ -54,21 +54,26 @@ local function init_service(address, name, ...)
 	if config.worker_bind then
 		worker_id = config.worker_bind[name]
 	end
-	root.init_service(address, name, config.init_service, worker_id)
-	ltask.syscall(address, "init", {
-		preload = config.preload,
-		lua_path = config.lua_path,
-		lua_cpath = config.lua_cpath,
-		service_path = config.service_path,
-		name = name,
-		args = {...},
-	})
+	local ok, err = root.init_service(address, name, config.init_service, worker_id)
+	if ok then
+		ltask.syscall(address, "init", {
+			preload = config.preload,
+			lua_path = config.lua_path,
+			lua_cpath = config.lua_cpath,
+			service_path = config.service_path,
+			name = name,
+			args = {...},
+		})
+		return ok
+	else
+		return ok, err
+	end
 end
 
 local function new_service(name, ...)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
 	anonymous_services[address] = true
-	local ok, err = pcall(init_service, address, name, ...)
+	local ok, err = init_service(address, name, ...)
 	if not ok then
 		return nil, err
 	end
