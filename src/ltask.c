@@ -670,10 +670,14 @@ thread_worker(void *ud) {
 		} else {
 			// No job, try to acquire scheduler to find a job
 			int nojob = 1;
-			if (!acquire_scheduler(w)) {
-				nojob = schedule_dispatch_worker(w);
-				release_scheduler(w);
-			}
+
+			do {
+				if (!acquire_scheduler(w)) {
+					nojob = schedule_dispatch_worker(w);
+					release_scheduler(w);
+				}
+			} while (atomic_int_load(&w->service_done));	// retry if no one clear done flag
+
 			if (nojob) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
