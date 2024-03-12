@@ -49,31 +49,14 @@ local multi_wait = ltask.multi_wait
 local multi_wakeup = ltask.multi_wakeup
 local multi_interrupt = ltask.multi_interrupt
 
-local function init_service(address, name, ...)
+local function new_service(name)
+	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
+	anonymous_services[address] = true
 	local worker_id
 	if config.worker_bind then
 		worker_id = config.worker_bind[name]
 	end
 	local ok, err = root.init_service(address, name, config.init_service, worker_id)
-	if ok then
-		ltask.syscall(address, "init", {
-			preload = config.preload,
-			lua_path = config.lua_path,
-			lua_cpath = config.lua_cpath,
-			service_path = config.service_path,
-			name = name,
-			args = {...},
-		})
-		return ok
-	else
-		return ok, err
-	end
-end
-
-local function new_service(name, ...)
-	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
-	anonymous_services[address] = true
-	local ok, err = init_service(address, name, ...)
 	if not ok then
 		return nil, err
 	end
@@ -95,10 +78,15 @@ function S.report_error(addr, session, errobj)
 end
 
 function S.spawn(name, ...)
-	local address, err = new_service(name, ...)
-	if not address then
-		error(err)
-	end
+	local address = assert(new_service(name))
+	ltask.syscall(address, "init", {
+		preload = config.preload,
+		lua_path = config.lua_path,
+		lua_cpath = config.lua_cpath,
+		service_path = config.service_path,
+		name = name,
+		args = {...},
+	})
 	return address
 end
 
@@ -126,12 +114,14 @@ function S.uniqueservice(name, ...)
 	if not unique[name] then
 		unique[name] = true
 		ltask.fork(function (...)
-			local addr, err = new_service(name, ...)
-			if not addr then
+			local ok, addr = pcall(S.spawn, name, ...)
+			if not ok then
+				local err = addr
 				multi_interrupt(key, err)
-			else
-				register_service(addr, name)
+				unique[name] = nil
+				return
 			end
+			register_service(addr, name)
 			unique[name] = nil
 		end, ...)
 	end
@@ -183,66 +173,96 @@ end
 
 ltask.signal_handler(signal_handler)
 
-local function init()
+local function find_exclusive(name)
+	for i, label in ipairs(config.exclusive or {}) do
+		if label == name then
+			return i + 1
+		end
+	end
+end
+
+local function find_preinit(name)
+	for i, label in ipairs(config.preinit or {}) do
+		if label == name then
+			return i + #config.exclusive + 1
+		end
+	end
+end
+
+local function bootstrap()
 	local namemap = {}
 	local request = ltask.request()
-	for i, t in ipairs(config.exclusive or {}) do
-		local name, args
-		if type(t) == "table" then
-			name = table.remove(t, 1)
-			args = t
-		else
-			name = t
-			args = {}
+	if config.exclusive then
+		for _, label in ipairs(config.exclusive) do
+			config.bootstrap[label] = config.bootstrap[label] or {}
 		end
-		local id = i + 1
-		namemap[id] = name
-		unique[name] = true
-		request:add { id, proto = "system", "init", {
+	end
+	if config.preinit then
+		for _, label in ipairs(config.preinit) do
+			config.bootstrap[label] = config.bootstrap[label] or {}
+		end
+	end
+	for label, t in pairs(config.bootstrap) do
+		local sid = find_exclusive(label)
+		if sid then
+			namemap[sid] = label
+			unique[label] = true
+			request:add { sid, proto = "system", "init", {
+				preload = config.preload,
+				lua_path = config.lua_path,
+				lua_cpath = config.lua_cpath,
+				service_path = config.service_path,
+				name = label,
+				args = t.args or {},
+			}}
+			goto continue
+		end
+		sid = find_preinit(label)
+		if sid then
+			namemap[sid] = label
+			unique[label] = true
+			request:add { sid, proto = "system", "init", {
+				lua_path = config.lua_path,
+				lua_cpath = config.lua_cpath,
+			}}
+			goto continue
+		end
+		sid = assert(new_service(label))
+		namemap[sid] = label
+		if t.unique ~= false then
+			unique[label] = true
+		end
+		request:add { sid, proto = "system", "init", {
 			preload = config.preload,
 			lua_path = config.lua_path,
 			lua_cpath = config.lua_cpath,
 			service_path = config.service_path,
-			name = name,
-			args = args,
+			name = label,
+			args = t.args or {},
 		}}
-	end
-	for i, name in ipairs(config.preinit or {}) do
-		local id = i + #config.exclusive + 1
-		namemap[id] = name
-		unique[name] = true
-		request:add { id, proto = "system", "init", {
-			lua_path = config.lua_path,
-			lua_cpath = config.lua_cpath,
-		}}
+		::continue::
 	end
 	for req, resp in request:select() do
-		local addr = req[1]
+		local sid = req[1]
 		local name = namemap[req[1]]
-		unique[name] = nil
-		if not resp then
-			multi_interrupt("unique."..name, req.error)
-			print(string.format("exclusive %d init error: %s", addr, req.error))
-			return
+		if unique[name] then
+			unique[name] = nil
+			if not resp then
+				multi_interrupt("unique."..name, req.error)
+				print(string.format("service %s(%d) init error: %s", name, sid, req.error))
+				return
+			end
+			register_service(sid, name)
+		else
+			if not resp then
+				print(string.format("service %s(%d) init error: %s", name, sid, req.error))
+				return
+			end
 		end
-		register_service(addr, name)
-	end
-	S.uniqueservice(table.unpack(config.logger))
-	return true
-end
-
-local function boot()
-	local ok, errobj = pcall(function ()
-		S.spawn(table.unpack(config.bootstrap))
-	end)
-	if not ok then
-		ltask.log.error("Root init error:", tostring(errobj))
 	end
 end
 
 ltask.dispatch(S)
 
-if init() then
-	boot()
-end
+bootstrap()
 quit()
