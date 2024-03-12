@@ -1480,70 +1480,6 @@ lsend_message_handle(lua_State *L) {
 	return 0;
 }
 
-static void
-acquire_scheduler_by_id(struct ltask * task, int thread_id) {
-	if (thread_id < MAX_EXCLUSIVE) {
-		struct exclusive_thread * e = &task->exclusives[thread_id];
-		acquire_scheduler_exclusive(e);
-	} else {
-		thread_id -= MAX_EXCLUSIVE;
-		assert(thread_id < task->config->worker);
-		struct worker_thread *w = &task->workers[thread_id];
-		while (acquire_scheduler(w)) {}
-	}
-}
-
-static void
-release_scheduler_by_id(struct ltask * task, int thread_id) {
-	if (thread_id < MAX_EXCLUSIVE) {
-		struct exclusive_thread * e = &task->exclusives[thread_id];
-		release_scheduler_exclusive(e);
-	} else {
-		thread_id -= MAX_EXCLUSIVE;
-		assert(thread_id < task->config->worker);
-		struct worker_thread *w = &task->workers[thread_id];
-		release_scheduler(w);
-	}
-}
-
-static inline int
-lsend_message_direct_(lua_State *L, const struct service_ud *S) {
-	struct message *msg = gen_send_message(L, S->id);
-	struct ltask * task = S->task;
-
-	int thread = service_thread_id(task->services, S->id);
-	if (thread < 0)
-		return luaL_error(L, "Invalid thread id %d", thread);
-	acquire_scheduler_by_id(task, thread);
-
-	int r = service_push_message(task->services, msg->to, msg);
-	if (r) {
-		release_scheduler_by_id(task, thread);
-		message_delete(msg);
-		if (r > 0) {
-			r = MESSAGE_RECEIPT_BLOCK;
-		} else {
-			r = MESSAGE_RECEIPT_ERROR;
-		}
-		lua_pushinteger(L, r);
-		return 1;
-	}
-	check_message_to(task, msg->to);
-	release_scheduler_by_id(task, thread);
-	lua_pushinteger(L, MESSAGE_RECEIPT_DONE);
-	return 1;
-}
-
-static inline int
-lsend_message_direct(lua_State *L) {
-	return lsend_message_direct_(L, getSup(L));
-}
-
-static inline int
-lsend_message_direct_delay(lua_State *L) {
-	return lsend_message_direct_(L, getSdelay(L));
-}
-
 static inline int
 lexclusive_send_message_(lua_State *L, const struct service_ud *S) {
 	int ethread = service_thread_id(S->task->services, S->id);
@@ -1899,7 +1835,6 @@ luaopen_ltask(lua_State *L) {
 		{ "remove", luaseri_remove },
 		{ "unpack_remove", luaseri_unpack_remove },
 		{ "send_message", NULL },
-		{ "send_message_direct", NULL },
 		{ "recv_message", NULL },
 		{ "message_receipt", NULL },
 		{ "touch_service", ltask_touch_service },
@@ -1931,7 +1866,6 @@ luaopen_ltask(lua_State *L) {
 	if (S) {
 		luaL_Reg l2[] = {
 			{ "send_message", lsend_message },
-			{ "send_message_direct", lsend_message_direct },
 			{ "recv_message", lrecv_message },
 			{ "message_receipt", lmessage_receipt },
 			{ "send_message_handle", lsend_message_handle },
@@ -1943,7 +1877,6 @@ luaopen_ltask(lua_State *L) {
 	} else {
 		luaL_Reg l2[] = {
 			{ "send_message", lsend_message_delay },
-			{ "send_message_direct", lsend_message_direct_delay },
 			{ "recv_message", lrecv_message_delay },
 			{ "message_receipt", lmessage_receipt_delay },
 			{ NULL, NULL },
