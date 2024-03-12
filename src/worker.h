@@ -57,17 +57,26 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->binding_queue.tail = 0;
 }
 
+static inline int
+worker_has_job(struct worker_thread *worker) {
+	return atomic_int_load(&worker->service_ready) != 0;
+}
+
 static inline void
 worker_sleep(struct worker_thread *w) {
-	if  (w->term_signal)
+	if (w->term_signal)
 		return;
 	cond_wait_begin(&w->trigger);
-	if (w->wakeup) {
+	if (worker_has_job(w)) {
 		w->wakeup = 0;
 	} else {
-		w->sleeping = 1;
-		cond_wait(&w->trigger);
-		w->sleeping = 0;
+		if (w->wakeup) {
+			w->wakeup = 0;
+		} else {
+			w->sleeping = 1;
+			cond_wait(&w->trigger);
+			w->sleeping = 0;
+		}
 	}
 	cond_wait_end(&w->trigger);
 }
@@ -132,10 +141,15 @@ worker_assign_job(struct worker_thread *worker, service_id id) {
 static inline service_id
 worker_get_job(struct worker_thread *worker) {
 	service_id id = { 0 };
-	int job = atomic_int_load(&worker->service_ready);
-	if (job) {
-		if (atomic_int_cas(&worker->service_ready, job, 0)) {
-			id.id = job;
+	for (;;) {
+		int job = atomic_int_load(&worker->service_ready);
+		if (job) {
+			if (atomic_int_cas(&worker->service_ready, job, 0)) {
+				id.id = job;
+				break;
+			}
+		} else {
+			break;
 		}
 	}
 	return id;
@@ -159,11 +173,6 @@ worker_steal_job(struct worker_thread *worker, struct service_pool *p) {
 		}
 	}
 	return id;
-}
-
-static inline int
-worker_has_job(struct worker_thread *worker) {
-	return atomic_int_load(&worker->service_ready) != 0;
 }
 
 // Calling by Scheduler, may consume service_done
