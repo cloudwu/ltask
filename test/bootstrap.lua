@@ -1,7 +1,5 @@
 local ltask = require "ltask"
 
-local timer = ltask.spawn "timer"
-
 local arg = ...
 
 print "Bootstrap Begin"
@@ -75,5 +73,3 @@ for req, resp in ltask.parallel(task) do
 end
 
 print "Bootstrap End"
-
-ltask.send(timer, "exit")

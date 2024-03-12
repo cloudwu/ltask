@@ -1,5 +1,7 @@
 local ltask = require "ltask"
 
+local MESSAGE_RESPONSE <const> = 2
+
 local last = ltask.walltime()
 
 local messages = {}
@@ -9,6 +11,60 @@ function timer.exit()
 	ltask.quit()
 end
 
+local send_message = ltask.send_message
+local coroutine_yield = coroutine.yield
+local message_receipt = ltask.message_receipt
+
+local blocked
+
+local mcount = 0
+
+local function send_all_messages()
+	for i = 1, #messages do
+		local v = messages[i]
+		local session = v >> 32
+		local addr = v & 0xffffffff
+		local blocked_queue = blocked and blocked[addr]
+		if blocked_queue then
+			blocked_queue[#blocked_queue+1] = session
+		else
+			send_message(addr, session, MESSAGE_RESPONSE)
+			mcount = mcount + 1
+			coroutine_yield(true)
+			if message_receipt() == RECEIPT_BLOCK then
+				blocked = blocked or {}
+				blocked[addr] = { session }
+			end
+		end
+	end
+end
+
+local function send_blocked_queue(addr, queue)
+	local n = #queue
+	for i = 1, n do
+		send_message(addr, queue[i], MESSAGE_RESPONSE)
+		coroutine_yield(true)
+		if message_receipt() == RECEIPT_BLOCK then
+			table.move(queue, i, n, 1)
+			return true
+		end
+	end
+end
+
+local function send_blocked()
+	local b
+	for addr, queue in pairs(blocked) do
+		if send_blocked_queue(addr, queue) then
+			b = true
+		else
+			blocked[addr] = nil
+		end
+	end
+	if not b then
+		blocked = nil
+	end
+end
+
 ltask.fork(function()
 	while true do
 		local now = ltask.walltime()
@@ -16,23 +72,16 @@ ltask.fork(function()
 		if delta > 0 then
 			for _ = 1, delta * 10 do
 				ltask.timer_update(messages)
-				for i = 1, #messages do
-					ltask.send_message_handle(messages[i])
-					coroutine.yield(true)
-					local type, msg, sz = ltask.message_receipt()
-					if type == RECEIPT_DONE then
-					elseif type == RECEIPT_ERROR then
-						ltask.remove(msg, sz)
-					elseif type == RECEIPT_BLOCK then
-						-- todo: send again
-						ltask.remove(msg, sz)
-					end
-				end
+				send_all_messages()
 			end
 			last = now
 		end
 		ltask.timer_sleep(10)
-		ltask.sleep(0)
+		if blocked then
+			send_blocked()
+		else
+			ltask.sleep(0)
+		end
 	end
 end)
 

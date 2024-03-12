@@ -1384,7 +1384,6 @@ lexclusive_timer_update(lua_State *L) {
 struct timer_update_ud {
 	lua_State *L;
 	int n;
-	service_id from;
 };
 
 static void
@@ -1392,15 +1391,9 @@ timer_callback(void *ud, void *arg) {
 	struct timer_update_ud *tu = (struct timer_update_ud *)ud;
 	struct timer_event *event = (arg);
 	lua_State *L = tu->L;
-	struct message m;
-	m.from = tu->from;
-	m.to = event->id;
-	m.session = event->session;
-	m.type = MESSAGE_RESPONSE;
-	m.msg = NULL;
-	m.sz = 0;
-	struct message *msg = message_new(&m);
-	lua_pushlightuserdata(L, msg);
+	uint64_t v = event->session;
+	v = v << 32 | event->id.id;
+	lua_pushinteger(L, v);
 	int idx = ++tu->n;
 	lua_seti(L, 1, idx);
 }
@@ -1418,7 +1411,6 @@ ltask_timer_update(lua_State *L) {
 	struct timer_update_ud tu;
 	tu.L = L;
 	tu.n = 0;
-	tu.from = S->id;
 	timer_update(t, timer_callback, &tu);
 	int n = lua_rawlen(L, 1);
 	int i;
@@ -1478,20 +1470,6 @@ lsend_message(lua_State *L) {
 static inline int
 lsend_message_delay(lua_State *L) {
 	return lsend_message_(L, getSdelay(L));
-}
-
-static int
-lsend_message_handle(lua_State *L) {
-	const struct service_ud *S = getSup(L);
-	struct message *msg = lua_touserdata(L, 1);
-	if (msg == NULL)
-		return luaL_error(L, "Invalid message handle");
-	if (service_send_message(S->task->services, S->id, msg)) {
-		// error
-		message_delete(msg);
-		return luaL_error(L, "Can't send message handle");
-	}
-	return 0;
 }
 
 static inline int
@@ -1882,7 +1860,6 @@ luaopen_ltask(lua_State *L) {
 			{ "send_message", lsend_message },
 			{ "recv_message", lrecv_message },
 			{ "message_receipt", lmessage_receipt },
-			{ "send_message_handle", lsend_message_handle },
 			{ NULL, NULL },
 		};
 
