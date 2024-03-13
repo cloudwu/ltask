@@ -1391,6 +1391,46 @@ lexclusive_timer_update(lua_State *L) {
 	return 0;
 }
 
+struct timer_update_ud {
+	lua_State *L;
+	int n;
+};
+
+static void
+timer_callback(void *ud, void *arg) {
+	struct timer_update_ud *tu = (struct timer_update_ud *)ud;
+	struct timer_event *event = (arg);
+	lua_State *L = tu->L;
+	uint64_t v = event->session;
+	v = v << 32 | event->id.id;
+	lua_pushinteger(L, v);
+	int idx = ++tu->n;
+	lua_seti(L, 1, idx);
+}
+
+static int
+ltask_timer_update(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	struct timer *t = S->task->timer;
+	if (t == NULL)
+		return luaL_error(L, "Init timer before bootstrap");
+	if (lua_gettop(L) > 1) {
+		lua_settop(L, 1);
+		luaL_checktype(L, 1, LUA_TTABLE);
+	}
+	struct timer_update_ud tu;
+	tu.L = L;
+	tu.n = 0;
+	timer_update(t, timer_callback, &tu);
+	int n = lua_rawlen(L, 1);
+	int i;
+	for (i=tu.n+1;i<=n;i++) {
+		lua_pushnil(L);
+		lua_seti(L, 1, i);
+	}
+	return 1;
+}
+
 static struct message *
 gen_send_message(lua_State *L, service_id id) {
 	struct message m;
@@ -1804,6 +1844,8 @@ luaopen_ltask(lua_State *L) {
 		{ "worker_id", lworker_id },
 		{ "worker_bind", lworker_bind },
 		{ "timer_add", ltask_timer_add },
+		{ "timer_update", ltask_timer_update },
+		{ "timer_sleep", lexclusive_sleep },
 		{ "now", ltask_now },
 		{ "walltime", ltask_walltime },
 		{ "pushlog", ltask_pushlog },
