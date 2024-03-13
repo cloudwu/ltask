@@ -1314,83 +1314,6 @@ ltask_timer_add(lua_State *L) {
 	return 0;
 }
 
-struct timer_execute {
-	lua_State *L;
-	service_id from;
-	struct queue *sending;
-	int blocked;
-};
-
-static void
-execute_timer(void *ud, void *arg) {
-	struct timer_execute *te = (struct timer_execute *)ud;
-	struct timer_event *event = (arg);
-
-	if (te->blocked > 0) {
-		lua_State *L = te->L;
-		lua_pushinteger(L, event->session);
-		lua_rawseti(L, -2, te->blocked*2+1);
-		lua_pushinteger(L, event->id.id);
-		lua_rawseti(L, -2, te->blocked*2+2);
-		++te->blocked;
-	} else {
-		struct message m;
-		m.from = te->from;
-		m.to = event->id;
-		m.session = event->session;
-		m.type = MESSAGE_RESPONSE;
-		m.msg = NULL;
-		m.sz = 0;
-		struct message *msg = message_new(&m);
-		if (queue_push_ptr(te->sending, (void *)msg)) {
-			// too many messages, blocked
-			message_delete(msg);
-			lua_State *L = te->L;
-			if (lua_istable(L, 1)) {
-				int n = lua_rawlen(L, 1);
-				te->blocked = n/2 + 1;
-			} else {
-				lua_newtable(L);
-				te->blocked = 1;
-			}
-			lua_pushinteger(L, event->session);
-			lua_rawseti(L, -2, te->blocked * 2 - 1);
-			lua_pushinteger(L, event->id.id);
-			lua_rawseti(L, -2 , te->blocked * 2 - 0);
-		}
-	}
-}
-
-static int
-lexclusive_timer_update(lua_State *L) {
-	const struct service_ud *S = getS(L);
-	struct timer *t = S->task->timer;
-	if (t == NULL)
-		return luaL_error(L, "Init timer before bootstrap");
-	if (lua_gettop(L) > 1) {
-		lua_settop(L, 1);
-		luaL_checktype(L, 1, LUA_TTABLE);
-	}
-
-	int ethread = service_thread_id(S->task->services, S->id);
-	struct exclusive_thread *thr = get_exclusive_thread(S->task, ethread);
-	if (thr == NULL)
-		return luaL_error(L, "Not in exclusive service");
-	struct timer_execute te;
-	te.L = L;
-	te.sending = thr->sending;
-	te.blocked = 0;
-	te.from = S->id;
-
-	timer_update(t, execute_timer, &te);
-
-	if (te.blocked > 0) {
-		return 1;
-	}
-
-	return 0;
-}
-
 struct timer_update_ud {
 	lua_State *L;
 	int n;
@@ -1958,7 +1881,6 @@ luaopen_ltask_exclusive(lua_State *L) {
 	luaL_checkversion(L);
 	luaL_Reg l[] = {
 		{ "send", NULL },
-		{ "timer_update", lexclusive_timer_update },
 		{ "sleep", lexclusive_sleep },
 		{ "scheduling", lexclusive_scheduling },
 		{ "eventinit", lexclusive_eventinit },
