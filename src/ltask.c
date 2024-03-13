@@ -252,15 +252,19 @@ dispatch_exclusive(struct ltask *task) {
 }
 
 static int
-collect_done_job(struct ltask *task, service_id done_job[]) {
+collect_done_job(struct ltask *task, service_id done_job[], char busy[]) {
 	int done_job_n = 0;
 	int i;
 	const int worker_n = task->config->worker;
+	memset(busy, 0, worker_n);
 	for (i=0;i<worker_n;i++) {
-		service_id job = worker_done_job(&task->workers[i]);
+		struct worker_thread * w = &task->workers[i];
+		service_id job = worker_done_job(w);
 		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
 			done_job[done_job_n++] = job;
+		} else if (!w->sleeping) {
+			busy[i] = 1;
 		}
 	}
 	return done_job_n;
@@ -320,7 +324,9 @@ count_freeslot(struct ltask *task) {
 		if (atomic_int_load(&w->service_ready) == 0) {
 			struct binding_service * q = &(w->binding_queue);
 			if (q->tail == q->head) {
-				++free_slot;
+				if (!worker_has_job(w)) {
+					++free_slot;
+				}
 			} else {
 				service_id id = q->q[q->head % BINDING_SERVICE_QUEUE];
 				++q->head;
@@ -336,8 +342,7 @@ count_freeslot(struct ltask *task) {
 }
 
 static int
-prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
-	int prepare_n = 0;
+prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepare_n) {
 	int i;
 	for (i=0;i<free_slot;i++) {
 		int job = queue_pop_int(task->schedule);
@@ -367,17 +372,30 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot) {
 }
 
 static int
-assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_n) {
+assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_n, const char busy[]) {
 	int i;
 	int assign_job = 0;
 	int worker_id = 0;
 	const int worker_n = task->config->worker;
+	int use_busy = 0;
 	int use_binding = 0;
+
 	for (i=0;i<prepare_n;i++) {
 		service_id id = prepare[i];
 		for (;;) {
+			if (worker_id >= worker_n) {
+				if (use_busy == 0) {
+					use_busy = 1;
+					worker_id = 0;
+				} else {
+					assert(use_binding == 0);
+					use_binding = 1;
+					worker_id = 0;
+				}
+			}
+			char not_busy = !busy[worker_id];
 			struct worker_thread * w = &task->workers[worker_id++];
-			if (w->binding.id == 0 || use_binding) {
+			if ((not_busy || use_busy) && (w->binding.id == 0 || use_binding)) {
 				service_id assign = worker_assign_job(w, id);
 				if (assign.id != 0) {
 					worker_wakeup(w);
@@ -387,11 +405,6 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 						break;
 					}
 				}
-			}
-			if (worker_id >= worker_n) {
-				assert(use_binding == 0);
-				use_binding = 1;
-				worker_id = 0;
 			}
 		}
 	}
@@ -417,30 +430,53 @@ wakeup_sleeping_workers(struct ltask *task, int jobs) {
 	}
 }
 
+static int
+get_pending_jobs(struct ltask *task, service_id output[], char busy[]) {
+	int i;
+	int worker_n = task->config->worker;
+	int n = 0;
+	struct service_pool * P = task->services;
+	for (i=0;i<worker_n;i++) {
+		if (busy[i]) {
+			struct worker_thread * w = &task->workers[i];
+			service_id id = worker_steal_job(w, P);
+			if (id.id) {
+				output[n++] = id;
+			}
+		}
+	}
+	return n;
+}
+
 static void
 schedule_dispatch(struct ltask *task) {
 	// Step 0 : send message from exclusive
 	dispatch_exclusive(task);
 
 	// Step 1 : Collect service_done
-	service_id done_job[MAX_WORKER];
-	int done_job_n = collect_done_job(task, done_job);
+	service_id jobs[MAX_WORKER];
+	char busy[MAX_WORKER];
+
+	int done_job_n = collect_done_job(task, jobs, busy);
 
 	// Step 2: Dispatch out message by service_done
-	dispath_out_messages(task, done_job, done_job_n);
+	dispath_out_messages(task, jobs, done_job_n);
 
-	// Step 3: Assign queue task
+	// Step 3: get pending jobs
+	int job_n = get_pending_jobs(task, jobs, busy);
+
+	// Step 4: Assign queue task
 	int free_slot = count_freeslot(task);
 
-	// Step 4: Assign task to workers
+	assert(free_slot >= job_n);
 
-	service_id prepare[MAX_WORKER];
-	int prepare_n = prepare_task(task, prepare, free_slot);
-
-	// Step 5
-	int assign_job = assign_prepare_task(task, prepare, prepare_n);
+	// Step 5: Assign task to workers
+	int prepare_n = prepare_task(task, jobs, free_slot - job_n, job_n);
 
 	// Step 6
+	int assign_job = assign_prepare_task(task, jobs, prepare_n, busy);
+
+	// Step 7
 	wakeup_sleeping_workers(task, assign_job);
 }
 
