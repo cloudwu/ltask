@@ -2,12 +2,10 @@ local ltask = require "ltask"
 
 local MESSAGE_RESPONSE <const> = 2
 
-local last = ltask.walltime()
-
 local messages = {}
 local timer = {}
 
-function timer.exit()
+function timer.quit()
 	ltask.quit()
 end
 
@@ -67,15 +65,8 @@ end
 
 ltask.fork(function()
 	while true do
-		local now = ltask.walltime()
-		local delta = now - last
-		if delta > 0 then
-			for _ = 1, delta * 10 do
-				ltask.timer_update(messages)
-				send_all_messages()
-			end
-			last = now
-		end
+		ltask.timer_update(messages)
+		send_all_messages()
 		ltask.timer_sleep(10)
 		if blocked then
 			send_blocked()
