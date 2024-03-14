@@ -318,7 +318,7 @@ count_freeslot(struct ltask *task) {
 	const int worker_n = task->config->worker;
 	for (i=0;i<worker_n;i++) {
 		struct worker_thread * w = &task->workers[i];
-		if (atomic_int_load(&w->service_ready) == 0) {
+		if (w->service_ready == 0) {
 			struct binding_service * q = &(w->binding_queue);
 			if (q->tail == q->head) {
 				if (!worker_has_job(w)) {
@@ -453,14 +453,12 @@ schedule_dispatch(struct ltask *task) {
 // 0 succ
 static int
 acquire_scheduler(struct worker_thread * worker) {
-	if (atomic_int_load(&worker->task->schedule_owner) == THREAD_NONE) {
-		if (atomic_int_cas(&worker->task->schedule_owner, THREAD_NONE, THREAD_WORKER(worker->worker_id))) {
-			debug_printf(worker->logger, "Acquire schedule");
+	if (atomic_int_cas(&worker->task->schedule_owner, THREAD_NONE, THREAD_WORKER(worker->worker_id))) {
+		debug_printf(worker->logger, "Acquire schedule");
 #ifdef TIMELOG
-			worker->schedule_time = systime_thread();
+		worker->schedule_time = systime_thread();
 #endif
-			return 0;
-		}
+		return 0;
 	}
 	return 1;
 }
@@ -481,11 +479,9 @@ release_scheduler(struct worker_thread * worker) {
 // 0 succ
 static int
 acquire_scheduler_exclusive(struct exclusive_thread * exclusive) {
-	if (atomic_int_load(&exclusive->task->schedule_owner) == THREAD_NONE) {
-		if (atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {
-			debug_printf(exclusive->logger, "Acquire schedule from exclusive");
-			return 0;
-		}
+	if (atomic_int_cas(&exclusive->task->schedule_owner, THREAD_NONE, THREAD_EXCLUSIVE(exclusive->thread_id))) {
+		debug_printf(exclusive->logger, "Acquire schedule from exclusive");
+		return 0;
 	}
 	return 1;
 }
@@ -694,12 +690,12 @@ thread_worker(void *ud) {
 					nojob = schedule_dispatch_worker(w);
 					release_scheduler(w);
 				}
-			} while (atomic_int_load(&w->service_done));	// retry if no one clear done flag
+			} while (w->service_done);	// retry if no one clear done flag
 
 			if (nojob) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
-				debug_printf(w->logger, "Sleeping (%d)", atomic_int_load(&w->task->active_worker));
+				debug_printf(w->logger, "Sleeping (%d)", w->task->active_worker);
 				worker_sleep(w);
 				atomic_int_inc(&w->task->active_worker);
 				debug_printf(w->logger, "Wakeup");
@@ -1048,7 +1044,7 @@ static void
 preinit_thread(void *args) {
 	struct preload_thread * t = (struct preload_thread *)args;
 	lua_State *L = t->L;
-	while (!atomic_int_load(&t->term)) {
+	while (!t->term) {
 		if (L) {
 			int result = 0;
 			lua_pushboolean(L, 1);
