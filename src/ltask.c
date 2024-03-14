@@ -209,10 +209,7 @@ sending_blocked_mark(struct sending_blocked *S, service_id id) {
 }
 
 static void
-dispatch_exclusive_sending(struct exclusive_thread *e) {
-	struct queue *sending = e->sending;
-	if (sending == NULL)
-		return;
+dispatch_exclusive_sending(struct exclusive_thread *e, struct queue *sending) {
 	struct ltask *task = e->task;
 	struct service_pool *P = task->services;
 	int len = queue_length(sending);
@@ -247,7 +244,11 @@ static void
 dispatch_exclusive(struct ltask *task) {
 	int i;
 	for (i=0;i<MAX_EXCLUSIVE;i++) {
-		dispatch_exclusive_sending(&task->exclusives[i]);
+		struct exclusive_thread *e = &task->exclusives[i];
+		struct queue *sending = e->sending;
+		if (sending == NULL)
+			break;
+		dispatch_exclusive_sending(e, e->sending);
 	}
 }
 
