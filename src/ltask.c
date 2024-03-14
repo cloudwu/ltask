@@ -252,19 +252,16 @@ dispatch_exclusive(struct ltask *task) {
 }
 
 static int
-collect_done_job(struct ltask *task, service_id done_job[], char busy[]) {
+collect_done_job(struct ltask *task, service_id done_job[]) {
 	int done_job_n = 0;
 	int i;
 	const int worker_n = task->config->worker;
-	memset(busy, 0, worker_n);
 	for (i=0;i<worker_n;i++) {
 		struct worker_thread * w = &task->workers[i];
 		service_id job = worker_done_job(w);
 		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
 			done_job[done_job_n++] = job;
-		} else if (!w->sleeping) {
-			busy[i] = 1;
 		}
 	}
 	return done_job_n;
@@ -372,7 +369,7 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 }
 
 static void
-assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_n, const char busy[]) {
+assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_n) {
 	int i;
 	int worker_id = 0;
 	const int worker_n = task->config->worker;
@@ -392,9 +389,8 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 					worker_id = 0;
 				}
 			}
-			char not_busy = !busy[worker_id];
 			struct worker_thread * w = &task->workers[worker_id++];
-			if ((not_busy || use_busy) && (w->binding.id == 0 || use_binding)) {
+			if ((use_busy || !w->busy) && (w->binding.id == 0 || use_binding)) {
 				service_id assign = worker_assign_job(w, id);
 				if (assign.id != 0) {
 					worker_wakeup(w);
@@ -409,14 +405,14 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 }
 
 static int
-get_pending_jobs(struct ltask *task, service_id output[], char busy[]) {
+get_pending_jobs(struct ltask *task, service_id output[]) {
 	int i;
 	int worker_n = task->config->worker;
 	int n = 0;
 	struct service_pool * P = task->services;
 	for (i=0;i<worker_n;i++) {
-		if (busy[i]) {
-			struct worker_thread * w = &task->workers[i];
+		struct worker_thread * w = &task->workers[i];
+		if (w->busy) {
 			service_id id = worker_steal_job(w, P);
 			if (id.id) {
 				output[n++] = id;
@@ -433,15 +429,14 @@ schedule_dispatch(struct ltask *task) {
 
 	// Step 1 : Collect service_done
 	service_id jobs[MAX_WORKER];
-	char busy[MAX_WORKER];
 
-	int done_job_n = collect_done_job(task, jobs, busy);
+	int done_job_n = collect_done_job(task, jobs);
 
 	// Step 2: Dispatch out message by service_done
 	dispath_out_messages(task, jobs, done_job_n);
 
 	// Step 3: get pending jobs
-	int job_n = get_pending_jobs(task, jobs, busy);
+	int job_n = get_pending_jobs(task, jobs);
 
 	// Step 4: Assign queue task
 	int free_slot = count_freeslot(task);
@@ -452,7 +447,7 @@ schedule_dispatch(struct ltask *task) {
 	int prepare_n = prepare_task(task, jobs, free_slot - job_n, job_n);
 
 	// Step 6
-	assign_prepare_task(task, jobs, prepare_n, busy);
+	assign_prepare_task(task, jobs, prepare_n);
 }
 
 // 0 succ
@@ -641,6 +636,7 @@ thread_worker(void *ud) {
 		service_id id = worker_get_job(w);
 		int dead = 0;
 		if (id.id) {
+			w->busy = 1;
 			w->running = id;
 			int status = service_status_get(P, id);
 			if (status != SERVICE_STATUS_DEAD) {
@@ -667,6 +663,7 @@ thread_worker(void *ud) {
 			} else {
 				debug_printf(w->logger, "Service %x is dead", id.id);
 			}
+			w->busy = 0;
 
 			while (worker_complete_job(w)) {
 				// Can't complete (running -> done)
