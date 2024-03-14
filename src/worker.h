@@ -33,6 +33,7 @@ struct worker_thread {
 	int term_signal;
 	int sleeping;
 	int wakeup;
+	int busy;
 	struct cond trigger;
 	struct binding_service binding_queue;
 	uint64_t schedule_time;
@@ -53,6 +54,7 @@ worker_init(struct worker_thread *worker, struct ltask *task, int worker_id) {
 	worker->term_signal = 0;
 	worker->sleeping = 0;
 	worker->wakeup = 0;
+	worker->busy = 0;
 	worker->binding_queue.head = 0;
 	worker->binding_queue.tail = 0;
 }
