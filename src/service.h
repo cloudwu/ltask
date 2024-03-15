@@ -63,5 +63,7 @@ int service_backtrace(struct service_pool *p, service_id id, char *buf, size_t s
 uint64_t service_cpucost(struct service_pool *p, service_id id);
 int service_binding_get(struct service_pool *p, service_id id);
 void service_binding_set(struct service_pool *p, service_id id, int worker_thread);
+int service_sockevent_get(struct service_pool *p, service_id id);
+void service_sockevent_init(struct service_pool *p, service_id id, int index);
 
 #endif

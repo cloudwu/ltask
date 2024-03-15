@@ -8,6 +8,7 @@
 #define DEFAULT_QUEUE_SENDING DEFAULT_QUEUE
 #define MAX_WORKER 256
 #define MAX_EXCLUSIVE 32
+#define MAX_SOCKEVENT 16
 
 struct ltask_config {
 	int worker;

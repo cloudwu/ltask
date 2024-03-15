@@ -53,6 +53,7 @@ struct service {
 	int receipt;
 	int thread_id;
 	int binding_thread;
+	int sockevent_id;
 	service_id id;
 	char label[32];
 	struct memory_stat stat;
@@ -175,6 +176,7 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->status = SERVICE_STATUS_UNINITIALIZED;
 	s->thread_id = -1;
 	s->binding_thread = -1;
+	s->sockevent_id = -1;
 	s->cpucost = 0;
 	s->clock = 0;
 	*service_slot(p, id) = s;
@@ -765,4 +767,20 @@ service_binding_set(struct service_pool *p, service_id id, int worker_thread) {
 	if (S == NULL)
 		return;
 	S->binding_thread = worker_thread;
+}
+
+int
+service_sockevent_get(struct service_pool *p, service_id id) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return -1;
+	return S->sockevent_id;
+}
+
+void
+service_sockevent_init(struct service_pool *p, service_id id, int index) {
+	struct service *S= get_service(p, id);
+	if (S == NULL)
+		return;
+	S->sockevent_id = index;
 }
