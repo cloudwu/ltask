@@ -10,14 +10,21 @@ local function searchpath(name)
 	return assert(package.searchpath(name, config.service_path))
 end
 
+local function readall(path)
+	local f <close> = assert(io.open(path))
+	return f:read "a"
+end
+
 local function init_config()
 	config.lua_path = config.lua_path or package.path
 	config.lua_cpath = config.lua_cpath or package.cpath
-	config.init_service = config.init_service or ("@" .. searchpath "service")
+	local servicepath = searchpath "service"
+	config.service_source = config.service_source or readall(servicepath)
+	config.service_chunkname = config.service_chunkname or ("@" .. servicepath)
 end
 
 local function new_service(label, id)
-	local sid = assert(boot.new_service(label, config.init_service, id))
+	local sid = assert(boot.new_service(label, config.service_source, config.service_chunkname, id))
 	assert(sid == id)
 	return sid
 end
@@ -53,10 +60,6 @@ function print(...)
 	boot.pushlog(ltask.pack("info", ...))
 end
 
-local function toclose(f)
-	return setmetatable({}, {__close=f})
-end
-
 -- test exclusive transfer
 
 local function dummy_service(id)
@@ -86,7 +89,6 @@ local function start(cfg)
 	config = cfg
 	init_config()
 	boot.init(config)
-	local _ <close> = toclose(boot.deinit)
 	boot.init_timer()
 	boot.init_socket()
 
@@ -100,6 +102,7 @@ local function start(cfg)
 	print "ltask Start"
 	local ctx = boot.run()
 	boot.wait(ctx)
+	boot.deinit()
 end
 
 return start
