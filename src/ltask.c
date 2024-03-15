@@ -931,6 +931,14 @@ thread_logger(void *ud) {
 	}
 }
 
+struct task_context {
+	int logthread;
+	int threads_count;
+	int usemainthread;
+	struct ltask *task;
+	struct thread t[1];
+};
+
 static int
 ltask_run(lua_State *L) {
 #ifdef DEBUGLOG
@@ -939,17 +947,27 @@ ltask_run(lua_State *L) {
 	int logthread = 0;
 #endif
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
-	int mainthread = luaL_optinteger(L, 1, -1);
-	if (mainthread >= 0) {
-		if (mainthread >= task->config->worker) {
-			return luaL_error(L, "Invalid mainthread %d", mainthread);
+	int usemainthread = 0;
+	int mainthread = -1;
+	if (lua_isinteger(L, 1)) {
+		usemainthread = 1;
+		mainthread = luaL_checkinteger(L, 1);
+		if (mainthread >= 0) {
+			if (mainthread >= task->config->worker) {
+				return luaL_error(L, "Invalid mainthread %d", mainthread);
+			}
 		}
 	}
 	
 	int ecount = exclusive_count(task);
 	int threads_count = task->config->worker + ecount + logthread;
 
-	struct thread * t = (struct thread *)lua_newuserdatauv(L, threads_count * sizeof(struct thread), 0);
+	struct task_context *ctx = (struct task_context *)lua_newuserdatauv(L, sizeof(*ctx) + (threads_count-1) * sizeof(struct thread), 0);
+	ctx->logthread = logthread;
+	ctx->threads_count = threads_count;
+	ctx->task = task;
+	ctx->usemainthread = usemainthread;
+	struct thread * t = ctx->t;
 	int i;
 	for (i=0;i<ecount;i++) {
 		t[i].func = thread_exclusive;
@@ -965,19 +983,28 @@ ltask_run(lua_State *L) {
 		t[threads_count-1].ud = (void *)task;
 	}
 	sig_init();
-	if (mainthread >= 0) {
+	if (usemainthread && mainthread >= 0) {
 		mainthread += ecount;
 		struct thread tmp = t[mainthread];
 		t[mainthread] = t[0];
 		t[0] = tmp;
 	}
-	thread_join(t, threads_count);
-	if (!logthread) {
-		close_logger(task);
+
+	return 1;
+}
+
+static int
+ltask_wait(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TUSERDATA);
+	struct task_context *ctx = (struct task_context *)lua_touserdata(L, 1);
+	thread_join(ctx->t, ctx->threads_count, ctx->usemainthread);
+	if (!ctx->logthread) {
+		close_logger(ctx->task);
 	}
-	logqueue_delete(task->lqueue);
+	logqueue_delete(ctx->task->lqueue);
+	int i;
 	for (i=0;i<MAX_SOCKEVENT;i++) {
-		sockevent_close(&task->event[i]);
+		sockevent_close(&ctx->task->event[i]);
 	}
 	return 0;
 }
@@ -1254,6 +1281,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "init", ltask_init },
 		{ "deinit", ltask_deinit },
 		{ "run", ltask_run },
+		{ "wait", ltask_wait },
 		{ "new_thread", ltask_exclusive },
 		{ "post_message", lpost_message },
 		{ "new_service", ltask_newservice },

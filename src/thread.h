@@ -6,7 +6,7 @@ struct thread {
 	void *ud;
 };
 
-static void thread_join(struct thread * threads, int n);
+static void thread_join(struct thread * threads, int n, int usemainthread);
 static void * thread_run(struct thread thread);
 static void thread_wait(void *pid);
 
@@ -61,11 +61,13 @@ thread_function(LPVOID lpParam) {
 }
 
 static inline void
-thread_join(struct thread * threads, int n) {
+thread_join(struct thread * threads, int n, int usemainthread) {
 	int i;
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
-	++threads;
-	--n;
+	if (usemainthread) {
+		++threads;
+		--n;
+	}
 	HANDLE *thread_handle = (HANDLE *)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,n*sizeof(HANDLE));
 	for (i=0;i<n;i++) {
 		thread_handle[i] = CreateThread(NULL, 0, thread_function, (LPVOID)&threads[i], 0, NULL);
@@ -74,7 +76,8 @@ thread_join(struct thread * threads, int n) {
 			return;
 		}
 	}
-	mainthread->func(mainthread->ud);
+	if (usemainthread)
+		mainthread->func(mainthread->ud);
 	WaitForMultipleObjects(n, thread_handle, TRUE, INFINITE);
 	for (i=0;i<n;i++) {
 		CloseHandle(thread_handle[i]);
@@ -156,10 +159,12 @@ thread_function(void * args) {
 }
 
 static inline void
-thread_join(struct thread *threads, int n) {
+thread_join(struct thread *threads, int n, int usemainthread) {
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
-	++threads;
-	--n;
+	if (usemainthread) {
+		++threads;
+		--n;
+	}
 	pthread_t pid[n];
 	int i;
 	for (i=0;i<n;i++) {
@@ -167,7 +172,8 @@ thread_join(struct thread *threads, int n) {
 			return;
 		}
 	}
-	mainthread->func(mainthread->ud);
+	if (usemainthread)
+		mainthread->func(mainthread->ud);
 	for (i=0;i<n;i++) {
 		pthread_join(pid[i], NULL); 
 	}
