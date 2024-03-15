@@ -923,8 +923,8 @@ thread_logger(void *ud) {
 struct task_context {
 	int logthread;
 	int threads_count;
-	int usemainthread;
 	struct ltask *task;
+	void *handle;
 	struct thread t[1];
 };
 
@@ -955,7 +955,6 @@ ltask_run(lua_State *L) {
 	ctx->logthread = logthread;
 	ctx->threads_count = threads_count;
 	ctx->task = task;
-	ctx->usemainthread = usemainthread;
 	struct thread * t = ctx->t;
 	int i;
 	for (i=0;i<ecount;i++) {
@@ -979,6 +978,7 @@ ltask_run(lua_State *L) {
 		t[0] = tmp;
 	}
 
+	ctx->handle = thread_start(ctx->t, ctx->threads_count, usemainthread);
 	return 1;
 }
 
@@ -986,7 +986,7 @@ static int
 ltask_wait(lua_State *L) {
 	luaL_checktype(L, 1, LUA_TUSERDATA);
 	struct task_context *ctx = (struct task_context *)lua_touserdata(L, 1);
-	thread_join(ctx->t, ctx->threads_count, ctx->usemainthread);
+	thread_join(ctx->handle, ctx->threads_count);
 	if (!ctx->logthread) {
 		close_logger(ctx->task);
 	}

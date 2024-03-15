@@ -97,9 +97,8 @@ local function start(cfg)
 	end
 	-- dummy_service(id)
 	bootstrap()	-- launch root
-	print "ltask Run"
+	print "ltask Start"
 	local ctx = boot.run()
-	print "ltask Run"
 	boot.wait(ctx)
 end
 
