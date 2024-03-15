@@ -6,7 +6,8 @@ struct thread {
 	void *ud;
 };
 
-static void thread_join(struct thread * threads, int n, int usemainthread);
+static void* thread_start(struct thread * threads, int n, int usemainthread);
+static void thread_join(void *handle, int n);
 static void * thread_run(struct thread thread);
 static void thread_wait(void *pid);
 
@@ -60,8 +61,8 @@ thread_function(LPVOID lpParam) {
 	return 0;
 }
 
-static inline void
-thread_join(struct thread * threads, int n, int usemainthread) {
+static inline void *
+thread_start(struct thread * threads, int n, int usemainthread) {
 	int i;
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
 	if (usemainthread) {
@@ -73,12 +74,19 @@ thread_join(struct thread * threads, int n, int usemainthread) {
 		thread_handle[i] = CreateThread(NULL, 0, thread_function, (LPVOID)&threads[i], 0, NULL);
 		if (thread_handle[i] == NULL) {
 			HeapFree(GetProcessHeap(), 0, thread_handle);
-			return;
+			return NULL;
 		}
 	}
 	if (usemainthread)
 		mainthread->func(mainthread->ud);
+	return (void *)thread_handle;
+}
+
+static inline void
+thread_join(void *handle, int n) {
+	HANDLE *thread_handle = (HANDLE *)handle;
 	WaitForMultipleObjects(n, thread_handle, TRUE, INFINITE);
+	int i;
 	for (i=0;i<n;i++) {
 		CloseHandle(thread_handle[i]);
 	}
@@ -158,25 +166,35 @@ thread_function(void * args) {
 	return NULL;
 }
 
-static inline void
-thread_join(struct thread *threads, int n, int usemainthread) {
+static inline void *
+thread_start(struct thread *threads, int n, int usemainthread) {
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
 	if (usemainthread) {
 		++threads;
 		--n;
 	}
-	pthread_t pid[n];
+	pthread_t *pid = (pthread_t *)malloc(n * sizeof(pthread_t));
 	int i;
 	for (i=0;i<n;i++) {
 		if (pthread_create(&pid[i], NULL, thread_function, &threads[i])) {
-			return;
+			free(pid);
+			return NULL;
 		}
 	}
 	if (usemainthread)
 		mainthread->func(mainthread->ud);
+
+	return pid;
+}
+
+static inline void
+thread_join(void *handle, int n) {
+	pthread_t *pid = (pthread_t *)handle;
+	int i;
 	for (i=0;i<n;i++) {
 		pthread_join(pid[i], NULL); 
 	}
+	free(handle);
 }
 
 static inline void *
