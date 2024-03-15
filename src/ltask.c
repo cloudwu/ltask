@@ -1041,7 +1041,7 @@ struct preload_thread {
 
 // 0 : succ
 static int
-newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *filename_source, struct preload_thread *preinit, int worker_id) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *source, size_t source_sz, const char *chunkname, struct preload_thread *preinit, int worker_id) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
@@ -1066,13 +1066,8 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		lua_pushliteral(L, "set label fail");
 		return -1;
 	}
-	if (filename_source) {
-		const char * err = NULL;
-		if (filename_source[0] == '@') {
-			err = service_loadfile(S, id, filename_source+1);
-		} else {
-			err = service_loadstring(S, id, filename_source);
-		}
+	if (source) {
+		const char * err = service_loadstring(S, id, source, source_sz, chunkname);
 		if (err) {
 			lua_pushstring(L, err);
 			service_delete(S, id);
@@ -1139,12 +1134,14 @@ static int
 ltask_newservice(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
 	const char *label = luaL_checkstring(L, 1);
-	const char *filename_source = luaL_checkstring(L, 2);
-	unsigned int sid = luaL_optinteger(L, 3, 0);
-	int worker_id = luaL_optinteger(L, 4, -1);
+	size_t source_sz = 0;
+	const char *source = luaL_checklstring(L, 2, &source_sz);
+	const char *chunkname = luaL_checkstring(L, 3);
+	unsigned int sid = luaL_optinteger(L, 4, 0);
+	int worker_id = luaL_optinteger(L, 5, -1);
 
 	service_id id = service_new(task->services, sid);
-	if (newservice(L, task, id, label, filename_source, NULL, worker_id)) {
+	if (newservice(L, task, id, label, source, source_sz, chunkname, NULL, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;
@@ -1163,7 +1160,7 @@ ltask_newservice_preinit(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	if (newservice(L, task, id, label, NULL, preload, worker_id)) {
+	if (newservice(L, task, id, label, 0, NULL, NULL, preload, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;
@@ -1980,11 +1977,13 @@ ltask_initservice(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	unsigned int sid = luaL_checkinteger(L, 1);
 	const char *label = luaL_checkstring(L, 2);
-	const char *filename_source = luaL_checkstring(L, 3);
-	int worker_id = luaL_optinteger(L, 4, -1);
+	size_t source_sz = 0;
+	const char *source = luaL_checklstring(L, 3, &source_sz);
+	const char *chunkname = luaL_checkstring(L, 4);
+	int worker_id = luaL_optinteger(L, 5, -1);
 
 	service_id id = { sid };
-	if (newservice(L, S->task, id, label, filename_source, NULL, worker_id)) {
+	if (newservice(L, S->task, id, label, source, source_sz, chunkname, NULL, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;

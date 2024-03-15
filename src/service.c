@@ -450,27 +450,12 @@ service_L(struct service_pool *p, service_id id) {
 }
 
 const char *
-service_loadfile(struct service_pool *p, service_id id, const char *filename) {
+service_loadstring(struct service_pool *p, service_id id, const char *source, size_t source_sz, const char *chunkname) {
 	struct service *S= get_service(p, id);
 	if (S == NULL || S->L == NULL)
 		return "Init service first";
 	lua_State *L = S->L;
-	if (luaL_loadfile(L, filename) != LUA_OK) {
-		const char * r = lua_tostring(S->L, -1);
-		S->status = SERVICE_STATUS_DEAD;
-		return r;
-	}
-	S->status = SERVICE_STATUS_IDLE;
-	return NULL;
-}
-
-const char *
-service_loadstring(struct service_pool *p, service_id id, const char *source) {
-	struct service *S= get_service(p, id);
-	if (S == NULL || S->L == NULL)
-		return "Init service first";
-	lua_State *L = S->L;
-	if (luaL_loadstring(L, source) != LUA_OK) {
+	if (luaL_loadbuffer(L, source, source_sz, chunkname) != LUA_OK) {
 		const char * r = lua_tostring(S->L, -1);
 		S->status = SERVICE_STATUS_DEAD;
 		return r;

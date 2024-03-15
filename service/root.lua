@@ -56,7 +56,7 @@ local function new_service(name)
 	if config.worker_bind then
 		worker_id = config.worker_bind[name]
 	end
-	local ok, err = root.init_service(address, name, config.init_service, worker_id)
+	local ok, err = root.init_service(address, name, config.service_source, config.service_chunkname, worker_id)
 	if not ok then
 		return nil, err
 	end

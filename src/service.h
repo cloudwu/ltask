@@ -38,8 +38,7 @@ const char * service_getlabel(struct service_pool *p, service_id id);
 void service_send_signal(struct service_pool *p, service_id id);
 void service_close(struct service_pool *p, service_id id);
 void service_delete(struct service_pool *p, service_id id);
-const char * service_loadfile(struct service_pool *p, service_id id, const char *filename);
-const char * service_loadstring(struct service_pool *p, service_id id, const char *source);
+const char * service_loadstring(struct service_pool *p, service_id id, const char *source, size_t source_sz, const char *chunkname);
 // 0 yield , 1 term or error
 int service_resume(struct service_pool *p, service_id id, int thread_id);
 int service_thread_id(struct service_pool *p, service_id id);
