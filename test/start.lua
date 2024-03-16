@@ -16,11 +16,23 @@ local function readall(path)
 end
 
 local function init_config()
-	config.lua_path = config.lua_path or package.path
-	config.lua_cpath = config.lua_cpath or package.cpath
 	local servicepath = searchpath "service"
 	config.service_source = config.service_source or readall(servicepath)
 	config.service_chunkname = config.service_chunkname or ("@" .. servicepath)
+	config.initfunc = ([[
+local name = ...
+package.path = "${lua_path}"
+package.cpath = "${lua_cpath}"
+local filename, err = package.searchpath(name, "${service_path}")
+if not filename then
+	return nil, err
+end
+return loadfile(filename)
+]]):gsub("%$%{([^}]*)%}", {
+	lua_path = config.lua_path or package.path,
+	lua_cpath = config.lua_cpath or package.cpath,
+	service_path = config.service_path,
+})
 end
 
 local function new_service(label, id)
@@ -34,9 +46,7 @@ local function bootstrap()
 	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
 	local init_msg, sz = ltask.pack("init", {
-		lua_path = config.lua_path,
-		lua_cpath = config.lua_cpath,
-		service_path = config.service_path,
+		initfunc = config.initfunc,
 		name = "root",
 		args = {config}
 	})
