@@ -80,10 +80,7 @@ end
 function S.spawn(name, ...)
 	local address = assert(new_service(name))
 	ltask.syscall(address, "init", {
-		preload = config.preload,
-		lua_path = config.lua_path,
-		lua_cpath = config.lua_cpath,
-		service_path = config.service_path,
+		initfunc = config.initfunc,
 		name = name,
 		args = {...},
 	})
@@ -208,10 +205,7 @@ local function bootstrap()
 			namemap[sid] = label
 			unique[label] = true
 			request:add { sid, proto = "system", "init", {
-				preload = config.preload,
-				lua_path = config.lua_path,
-				lua_cpath = config.lua_cpath,
-				service_path = config.service_path,
+				initfunc = config.initfunc,
 				name = label,
 				args = t.args or {},
 			}}
@@ -221,10 +215,7 @@ local function bootstrap()
 		if sid then
 			namemap[sid] = label
 			unique[label] = true
-			request:add { sid, proto = "system", "init", {
-				lua_path = config.lua_path,
-				lua_cpath = config.lua_cpath,
-			}}
+			request:add { sid, proto = "system", "init", {}}
 			goto continue
 		end
 		sid = assert(new_service(label))
@@ -233,10 +224,7 @@ local function bootstrap()
 			unique[label] = true
 		end
 		request:add { sid, proto = "system", "init", {
-			preload = config.preload,
-			lua_path = config.lua_path,
-			lua_cpath = config.lua_cpath,
-			service_path = config.service_path,
+			initfunc = config.initfunc,
 			name = label,
 			args = t.args or {},
 		}}
