@@ -1160,7 +1160,7 @@ ltask_newservice_preinit(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 4, -1);
 
 	service_id id = service_new(task->services, sid);
-	if (newservice(L, task, id, label, 0, NULL, NULL, preload, worker_id)) {
+	if (newservice(L, task, id, label, NULL, 0, NULL, preload, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;

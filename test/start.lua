@@ -19,16 +19,16 @@ local function init_config()
 	local servicepath = searchpath "service"
 	config.service_source = config.service_source or readall(servicepath)
 	config.service_chunkname = config.service_chunkname or ("@" .. servicepath)
-	config.initfunc = ([[
+	config.initfunc = ([=[
 local name = ...
-package.path = "${lua_path}"
-package.cpath = "${lua_cpath}"
+package.path = [[${lua_path}]]
+package.cpath = [[${lua_cpath}]]
 local filename, err = package.searchpath(name, "${service_path}")
 if not filename then
 	return nil, err
 end
 return loadfile(filename)
-]]):gsub("%$%{([^}]*)%}", {
+]=]):gsub("%$%{([^}]*)%}", {
 	lua_path = config.lua_path or package.path,
 	lua_cpath = config.lua_cpath or package.cpath,
 	service_path = config.service_path,
