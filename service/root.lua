@@ -13,6 +13,7 @@ local S = {}
 
 local anonymous_services = {}
 local named_services = {}
+local worker_bind = config.worker_bind or {}
 
 local function writelog()
 	while true do
@@ -52,10 +53,7 @@ local multi_interrupt = ltask.multi_interrupt
 local function new_service(name)
 	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
 	anonymous_services[address] = true
-	local worker_id
-	if config.worker_bind then
-		worker_id = config.worker_bind[name]
-	end
+	local worker_id = worker_bind[name]
 	local ok, err = root.init_service(address, name, config.service_source, config.service_chunkname, worker_id)
 	if not ok then
 		return nil, err
@@ -123,6 +121,10 @@ function S.uniqueservice(name, ...)
 		end, ...)
 	end
 	return multi_wait(key)
+end
+
+function S.worker_bind(name, worker_id)
+	worker_bind[name] = worker_id
 end
 
 local function del_service(address)
