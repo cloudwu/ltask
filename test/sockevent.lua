@@ -1,9 +1,12 @@
 local ltask = require "ltask"
-local exclusive = require "ltask.exclusive"
 
-local waitfunc, fd = exclusive.eventinit()
+local waitfunc, fd = ltask.eventinit()
 print("Event fd =", fd)
-ltask.on_idle = waitfunc
+
+ltask.idle_handler(function()
+	print("Idle")
+	waitfunc()
+end)
 
 local S = {}
 

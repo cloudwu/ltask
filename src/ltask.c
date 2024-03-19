@@ -302,8 +302,23 @@ dispath_out_messages(struct ltask *task, const service_id done_job[], int done_j
 			}
 			assert(status == SERVICE_STATUS_DONE);
 			if (!service_has_message(P, id)) {
-				debug_printf(task->logger, "Service %x is idle", id.id);
-				service_status_set(P, id, SERVICE_STATUS_IDLE);
+				int sockid = service_sockevent_get(P, id);
+				if (sockid >= 0) {
+					debug_printf(task->logger, "Service %x back to schedule for sockevent", id.id);
+					struct message msg;
+					msg.from.id = SERVICE_ID_SYSTEM;
+					msg.to = id;
+					msg.session = 0;
+					msg.type = MESSAGE_IDLE;
+					msg.msg = NULL;
+					msg.sz = 0;
+					service_push_message(P, id, message_new(&msg));
+					service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
+					schedule_back(task, id);
+				} else {
+					debug_printf(task->logger, "Service %x is idle", id.id);
+					service_status_set(P, id, SERVICE_STATUS_IDLE);
+				}
 			} else {
 				debug_printf(task->logger, "Service %x back to schedule", id.id);
 				service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
@@ -632,6 +647,8 @@ thread_worker(void *ud) {
 	int thread_id = THREAD_WORKER(w->worker_id);
 
 	sig_register(crash_log_worker, w);
+
+	debug_printf(w->logger, "Start worker %x", w->worker_id);
 
 	for (;;) {
 		if (w->term_signal) {

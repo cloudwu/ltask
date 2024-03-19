@@ -6,9 +6,7 @@ start {
         ["timer"] = {},
         ["logger"] = {},
         ["bootstrap"] = { unique = false },
-    },
-    exclusive = {
-        "sockevent",
+		["sockevent"] = {},
     },
     debuglog = "=", -- stdout
 }

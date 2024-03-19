@@ -7,6 +7,7 @@ local MESSAGE_REQUEST <const> = 1
 local MESSAGE_RESPONSE <const> = 2
 local MESSAGE_ERROR <const> = 3
 local MESSAGE_SIGNAL <const> = 4
+local MESSAGE_IDLE <const> = 5
 
 local RECEIPT_DONE <const> = 1
 local RECEIPT_ERROR <const> = 2
@@ -952,12 +953,20 @@ function ltask.dispatch(handler)
 	return service
 end
 
-function ltask.signal_handler(f)	-- root only
-	SESSION[MESSAGE_SIGNAL] = function (type, msg, sz)
+local function register_handler(msg_type, f)
+	SESSION[msg_type] = function (type)
 		local from = session_coroutine_address[running_thread]
 		local session = session_coroutine_response[running_thread]
 		f(from, session)
 	end
+end
+
+function ltask.signal_handler(f)	-- root only
+	register_handler(MESSAGE_SIGNAL, f)
+end
+
+function ltask.idle_handler(f)	-- root only
+	register_handler(MESSAGE_IDLE, f)
 end
 
 local yieldable_require; do

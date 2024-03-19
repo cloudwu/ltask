@@ -61,38 +61,8 @@ local function bootstrap()
 	}
 end
 
-local function exclusive_thread(label, id)
-	local sid = new_service(label, id)
-	boot.new_thread(sid)
-end
-
 function print(...)
 	boot.pushlog(ltask.pack("info", ...))
-end
-
--- test exclusive transfer
-
-local function dummy_service(id)
-	local dummy = [[
-local exclusive = require "ltask.exclusive"
-
-local i = 0
-while true do
-	local pre = coroutine.yield()
-	print ("Dummy Tick", pre, i)
-	io.flush()
-	exclusive.sleep(1000)
-	i = i + 1
-end
-	]]
-
-	local p = boot.preinit(dummy)
-	local label = "Dummy"
-	os.execute "sleep 1"
-
-	local sid = assert(boot.new_service_preinit(label, id + 1, p))
-	assert(id + 1 == sid)
-	boot.new_thread(sid)
 end
 
 local function start(cfg)
@@ -101,13 +71,6 @@ local function start(cfg)
 	boot.init(config)
 	boot.init_timer()
 	boot.init_socket()
-
-	local id = 0
-	for i, label in ipairs(config.exclusive) do
-		id = i + 1
-		exclusive_thread(label, id)
-	end
-	-- dummy_service(id)
 	bootstrap()	-- launch root
 	print "ltask Start"
 	local ctx = boot.run()
