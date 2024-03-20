@@ -13,7 +13,6 @@ local S = {}
 
 local anonymous_services = {}
 local named_services = {}
-local worker_bind = config.worker_bind or {}
 
 local function writelog()
 	while true do
@@ -50,17 +49,6 @@ local multi_wait = ltask.multi_wait
 local multi_wakeup = ltask.multi_wakeup
 local multi_interrupt = ltask.multi_interrupt
 
-local function new_service(name)
-	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
-	anonymous_services[address] = true
-	local worker_id = worker_bind[name]
-	local ok, err = root.init_service(address, name, config.service_source, config.service_chunkname, worker_id)
-	if not ok then
-		return nil, err
-	end
-	return address
-end
-
 local function register_service(address, name)
 	if named_services[name] then
 		error(("Name `%s` already exists."):format(name))
@@ -75,19 +63,48 @@ function S.report_error(addr, session, errobj)
 	ltask.error(addr, session, errobj)
 end
 
-function S.spawn(name, ...)
-	local address = assert(new_service(name))
+local function spawn(t)
+	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
+	anonymous_services[address] = true
+	assert(root.init_service(address, t.name, config.service_source, config.service_chunkname, t.worker_id))
 	ltask.syscall(address, "init", {
-		initfunc = config.initfunc,
-		name = name,
-		args = {...},
+		initfunc = t.initfunc or config.initfunc,
+		name = t.name,
+		args = t.args or {},
 	})
 	return address
 end
 
-function S.register(name)
-	local session = ltask.current_session()
-	register_service(session.from, name)
+local unique = {}
+
+local function spawn_unique(t)
+	local address = named_services[t.name]
+	if address then
+		return address
+	end
+	local key = "unique."..t.name
+	if not unique[t.name] then
+		unique[t.name] = true
+		ltask.fork(function ()
+			local ok, addr = pcall(spawn, t)
+			if not ok then
+				local err = addr
+				multi_interrupt(key, err)
+				unique[t.name] = nil
+				return
+			end
+			register_service(addr, t.name)
+			unique[t.name] = nil
+		end)
+	end
+	return multi_wait(key)
+end
+
+function S.spawn(name, ...)
+	return spawn {
+		name = name,
+		args = {...},
+	}
 end
 
 function S.queryservice(name)
@@ -98,33 +115,19 @@ function S.queryservice(name)
 	return multi_wait("unique."..name)
 end
 
-local unique = {}
-
 function S.uniqueservice(name, ...)
-	local address = named_services[name]
-	if address then
-		return address
-	end
-	local key = "unique."..name
-	if not unique[name] then
-		unique[name] = true
-		ltask.fork(function (...)
-			local ok, addr = pcall(S.spawn, name, ...)
-			if not ok then
-				local err = addr
-				multi_interrupt(key, err)
-				unique[name] = nil
-				return
-			end
-			register_service(addr, name)
-			unique[name] = nil
-		end, ...)
-	end
-	return multi_wait(key)
+	return spawn_unique {
+		name = name,
+		args = {...},
+	}
 end
 
-function S.worker_bind(name, worker_id)
-	worker_bind[name] = worker_id
+function S.spawn_service(t)
+	if t.unique then
+		return spawn_unique(t)
+	else
+		return spawn(t)
+	end
 end
 
 local function del_service(address)
@@ -172,83 +175,9 @@ end
 
 ltask.signal_handler(signal_handler)
 
-local function find_exclusive(name)
-	for i, label in ipairs(config.exclusive or {}) do
-		if label == name then
-			return i + 1
-		end
-	end
-end
-
-local function find_preinit(name)
-	for i, label in ipairs(config.preinit or {}) do
-		if label == name then
-			return i + #config.exclusive + 1
-		end
-	end
-end
-
 local function bootstrap()
-	local namemap = {}
-	local request = ltask.request()
-	if config.exclusive then
-		for _, label in ipairs(config.exclusive) do
-			config.bootstrap[label] = config.bootstrap[label] or {}
-		end
-	end
-	if config.preinit then
-		for _, label in ipairs(config.preinit) do
-			config.bootstrap[label] = config.bootstrap[label] or {}
-		end
-	end
-	for label, t in pairs(config.bootstrap) do
-		local sid = find_exclusive(label)
-		if sid then
-			namemap[sid] = label
-			unique[label] = true
-			request:add { sid, proto = "system", "init", {
-				initfunc = config.initfunc,
-				name = label,
-				args = t.args or {},
-			}}
-			goto continue
-		end
-		sid = find_preinit(label)
-		if sid then
-			namemap[sid] = label
-			unique[label] = true
-			request:add { sid, proto = "system", "init", {}}
-			goto continue
-		end
-		sid = assert(new_service(label))
-		namemap[sid] = label
-		if t.unique ~= false then
-			unique[label] = true
-		end
-		request:add { sid, proto = "system", "init", {
-			initfunc = config.initfunc,
-			name = label,
-			args = t.args or {},
-		}}
-		::continue::
-	end
-	for req, resp in request:select() do
-		local sid = req[1]
-		local name = namemap[req[1]]
-		if unique[name] then
-			unique[name] = nil
-			if not resp then
-				multi_interrupt("unique."..name, req.error)
-				print(string.format("service %s(%d) init error: %s", name, sid, req.error))
-				return
-			end
-			register_service(sid, name)
-		else
-			if not resp then
-				print(string.format("service %s(%d) init error: %s", name, sid, req.error))
-				return
-			end
-		end
+	for _, t in ipairs(config.bootstrap) do
+		S.spawn_service(t)
 	end
 end
 
