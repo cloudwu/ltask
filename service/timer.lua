@@ -1,6 +1,7 @@
 local ltask = require "ltask"
 
 local MESSAGE_RESPONSE <const> = 2
+local RECEIPT_BLOCK <const> = 3
 
 local messages = {}
 local timer = {}
