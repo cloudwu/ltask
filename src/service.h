@@ -30,7 +30,7 @@ struct service_pool * service_create(struct ltask_config *config);
 void service_destory(struct service_pool *p);
 service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
-int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, struct service *s);
+int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL);
 int service_requiref(struct service_pool *p, service_id id, const char *name, void *f, void *L);
 int service_setlabel(struct service_pool *p, service_id id, const char *label);
 const char * service_getlabel(struct service_pool *p, service_id id);
@@ -56,8 +56,6 @@ void service_write_receipt(struct service_pool *p, service_id id, int receipt, s
 struct message * service_read_receipt(struct service_pool *p, service_id id, int *receipt);
 size_t service_memlimit(struct service_pool *p, service_id id, size_t limit);
 size_t service_memcount(struct service_pool *p, service_id id, int luatype);
-struct service * service_preinit(void *L, const char *source);
-void * service_preinit_L(struct service *);
 int service_backtrace(struct service_pool *p, service_id id, char *buf, size_t sz);
 uint64_t service_cpucost(struct service_pool *p, service_id id);
 int service_binding_get(struct service_pool *p, service_id id);

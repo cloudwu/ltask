@@ -192,14 +192,6 @@ get_service(struct service_pool *p, service_id id) {
 	return S;
 }
 
-static void
-replace_service(struct service_pool *p, service_id id, struct service *s) {
-	struct service *S = *service_slot(p, id.id);
-	(void)S;
-	assert(S->id.id == id.id);
-	*service_slot(p, id.id) = s;
-}
-
 static inline int
 check_limit(struct memory_stat *stat) {
 	if (stat->limit == 0)
@@ -267,80 +259,22 @@ error_message(lua_State *fromL, lua_State *toL, const char *msg) {
 	}
 }
 
-static int
-preinit(lua_State *L) {
-	luaL_openlibs(L);
-	lua_gc(L, LUA_GCGEN, 0, 0);
-	const char * source = (const char *)lua_touserdata(L, 1);
-	if (luaL_loadstring(L, source) != LUA_OK) {
-		return lua_error(L);
-	}
-	return 1;
-}
-
-void *
-service_preinit_L(struct service *s) {
-	return s->L;
-}
-
-struct service *
-service_preinit(void *pL, const char *source) {
-	struct service *s = (struct service *)malloc(sizeof(*s));
-	struct memory_stat *stat = &s->stat;
-	memset(stat, 0, sizeof(*stat));
-	lua_State *L = lua_newstate(service_alloc, stat);
-	if (L == NULL) {
-		free(s);
-	}
-	lua_pushcfunction(L, preinit);
-	lua_pushlightuserdata(L, (void *)source);
-	if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
-		size_t sz;
-		const char * err = lua_tolstring(L, -1, &sz);
-		char msg[4096];
-		if (sz > sizeof(msg)) {
-			sz = sizeof(msg);
-		}
-		memcpy(msg, err, sz);
-		lua_close(L);
-		free(s);
-		L = (lua_State *)pL;
-		lua_pushlstring(L, msg, sz);
-		lua_error(L);
-		return NULL;
-	}
-	s->L = L;
-	return s;
-}
-
 int
-service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL, struct service *preS) {
+service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL) {
 	struct service *S = get_service(p, id);
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
 	lua_State *L;
-	if (preS == NULL) {
-		memset(&S->stat, 0, sizeof(S->stat));
-		L = lua_newstate(service_alloc, &S->stat);
-		if (L == NULL)
-			return 1;
-		lua_pushcfunction(L, init_service);
-		lua_pushlightuserdata(L, ud);
-		lua_pushinteger(L, sz);
-		if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
-			error_message(L, pL, "Init lua state error");
-			lua_close(L);
-			return 1;
-		}
-	} else {
-		replace_service(p, id, preS);
-		struct memory_stat stat = preS->stat;
-		L = preS->L;
-		memcpy(preS, S, sizeof(struct service));
-		free(S);
-		S = preS;
-		S->stat = stat;
-		S->status = SERVICE_STATUS_IDLE;
-		init_service_key(L, ud, sz);
+	memset(&S->stat, 0, sizeof(S->stat));
+	L = lua_newstate(service_alloc, &S->stat);
+	if (L == NULL)
+		return 1;
+	lua_pushcfunction(L, init_service);
+	lua_pushlightuserdata(L, ud);
+	lua_pushinteger(L, sz);
+	if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+		error_message(L, pL, "Init lua state error");
+		lua_close(L);
+		return 1;
 	}
 	S->msg = queue_new_ptr(p->queue_length);
 	if (S->msg == NULL) {

@@ -1068,21 +1068,13 @@ struct preload_thread {
 
 // 0 : succ
 static int
-newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *source, size_t source_sz, const char *chunkname, struct preload_thread *preinit, int worker_id) {
+newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *source, size_t source_sz, const char *chunkname, int worker_id) {
 	struct service_ud ud;
 	ud.task = task;
 	ud.id = id;
 	struct service_pool *S = task->services;
-	struct service *preS = NULL;
 
-	if (preinit) {
-		atomic_int_store(&preinit->term, 1);
-		thread_wait(preinit->thread);
-		preS = preinit->service;
-		free(preinit);
-	}
-
-	if (service_init(S, id, (void *)&ud, sizeof(ud), L, preS) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
+	if (service_init(S, id, (void *)&ud, sizeof(ud), L) || service_requiref(S, id, "ltask", luaopen_ltask, L)) {
 		service_delete(S, id);
 		lua_pushfstring(L, "New service fail : %s", get_error_message(L));
 		return -1;
@@ -1104,59 +1096,6 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 	return 0;
 }
 
-static void
-preinit_thread(void *args) {
-	struct preload_thread * t = (struct preload_thread *)args;
-	lua_State *L = t->L;
-	while (!t->term) {
-		if (L) {
-			int result = 0;
-			lua_pushboolean(L, 1);
-			int r = lua_resume(L, NULL, 1, &result);
-			if (r != LUA_YIELD) {
-				if (r != LUA_OK) {
-					if (!lua_checkstack(L, LUA_MINSTACK)) {
-						lua_writestringerror("%s\n", lua_tostring(L, -1));
-						lua_pop(L, 1);
-					} else {
-						lua_pushfstring(L, "Preinit error: %s", lua_tostring(L, -1));
-						luaL_traceback(L, L, lua_tostring(L, -1), 0);
-						lua_writestringerror("%s\n", lua_tostring(L, -1));
-						lua_pop(L, 2);
-					}
-				}
-				L = NULL;
-			} else {
-				lua_pop(L, result);
-			}
-		} else {
-			sys_sleep(1);
-		}
-	}
-}
-
-static int
-ltask_preinit(lua_State *L) {
-	struct preload_thread * p = (struct preload_thread *)malloc(sizeof(*p));
-	p->L = NULL;
-	p->thread = NULL;
-	p->service = NULL;
-	atomic_int_init(&p->term, 0);
-	const char * source = luaL_checkstring(L, 1);
-	p->service = service_preinit((void *)L, source);
-	p->L = service_preinit_L(p->service);
-
-	struct thread th;
-	th.func = preinit_thread;
-	th.ud = (void *)p;
-
-	p->thread = thread_run(th);
-
-	lua_pushlightuserdata(L, (void *)p);
-
-	return 1;
-}
-
 static int
 ltask_newservice(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
@@ -1168,26 +1107,7 @@ ltask_newservice(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 5, -1);
 
 	service_id id = service_new(task->services, sid);
-	if (newservice(L, task, id, label, source, source_sz, chunkname, NULL, worker_id)) {
-		lua_pushboolean(L, 0);
-		lua_insert(L, -2);
-		return 2;
-	}
-	lua_pushinteger(L, id.id);
-	return 1;
-}
-
-static int
-ltask_newservice_preinit(lua_State *L) {
-	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
-	const char *label = luaL_checkstring(L, 1);
-	unsigned int sid = luaL_checkinteger(L, 2);
-	luaL_checktype(L, 3, LUA_TLIGHTUSERDATA);
-	struct preload_thread *preload = (struct preload_thread *)lua_touserdata(L, 3);
-	int worker_id = luaL_optinteger(L, 4, -1);
-
-	service_id id = service_new(task->services, sid);
-	if (newservice(L, task, id, label, NULL, 0, NULL, preload, worker_id)) {
+	if (newservice(L, task, id, label, source, source_sz, chunkname, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;
@@ -1313,8 +1233,6 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "init_root", ltask_init_root },
 		{ "init_socket", ltask_init_socket },
 		{ "pushlog", ltask_boot_pushlog },
-		{ "preinit", ltask_preinit },
-		{ "new_service_preinit", ltask_newservice_preinit },
 		{ NULL, NULL },
 	};
 	
@@ -2010,7 +1928,7 @@ ltask_initservice(lua_State *L) {
 	int worker_id = luaL_optinteger(L, 5, -1);
 
 	service_id id = { sid };
-	if (newservice(L, S->task, id, label, source, source_sz, chunkname, NULL, worker_id)) {
+	if (newservice(L, S->task, id, label, source, source_sz, chunkname, worker_id)) {
 		lua_pushboolean(L, 0);
 		lua_insert(L, -2);
 		return 2;
