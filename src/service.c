@@ -51,7 +51,6 @@ struct service {
 	struct message *bounce;
 	int status;
 	int receipt;
-	int thread_id;
 	int binding_thread;
 	int sockevent_id;
 	service_id id;
@@ -174,7 +173,6 @@ service_new(struct service_pool *p, unsigned int sid) {
 	s->receipt = MESSAGE_RECEIPT_NONE;
 	s->id.id = id;
 	s->status = SERVICE_STATUS_UNINITIALIZED;
-	s->thread_id = -1;
 	s->binding_thread = -1;
 	s->sockevent_id = -1;
 	s->cpucost = 0;
@@ -399,11 +397,10 @@ service_loadstring(struct service_pool *p, service_id id, const char *source, si
 }
 
 int
-service_resume(struct service_pool *p, service_id id, int thread_id) {
+service_resume(struct service_pool *p, service_id id) {
 	struct service *S= get_service(p, id);
 	if (S == NULL)
 		return 1;
-	S->thread_id = thread_id;
 	lua_State *L = S->L;
 	if (L == NULL)
 		return 1;
@@ -431,22 +428,6 @@ service_resume(struct service_pool *p, service_id id, int thread_id) {
 	lua_pop(L, 3);
 	return 1;
 }
-
-int
-service_thread_id(struct service_pool *p, service_id id) {
-	struct service *S= get_service(p, id);
-	if (S == NULL)
-		return -1;
-	return S->thread_id;
-}
-
-void
- service_bind_thread(struct service_pool *p, service_id id, int thread_id) {
-	struct service *S= get_service(p, id);
-	if (S == NULL)
-		return;
-	S->thread_id = thread_id;
- }
 
 int
 service_push_message(struct service_pool *p, service_id id, struct message *msg) {
