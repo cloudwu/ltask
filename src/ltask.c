@@ -375,6 +375,16 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 			} else {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
+					if (w->busy) {
+						service_id running = w->running;
+						if (running.id != 0) {
+							// touch service who block the binding worker
+							int sockevent_id = service_sockevent_get(task->services, running);
+							if (sockevent_id >= 0) {
+								sockevent_trigger(&task->event[sockevent_id]);
+							}
+						}
+					}
 					worker_wakeup(w);
 					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
