@@ -673,20 +673,16 @@ function ltask.spawn(name, ...)
     return ltask.call(SERVICE_ROOT, "spawn", name, ...)
 end
 
-function ltask.kill(addr)
-    return ltask.call(SERVICE_ROOT, "kill", addr)
-end
-
-function ltask.register(name)
-    return ltask.call(SERVICE_ROOT, "register", name)
-end
-
 function ltask.queryservice(name)
     return ltask.call(SERVICE_ROOT, "queryservice", name)
 end
 
 function ltask.uniqueservice(name, ...)
     return ltask.call(SERVICE_ROOT, "uniqueservice", name, ...)
+end
+
+function ltask.spawn_service(name, ...)
+    return ltask.call(SERVICE_ROOT, "spawn_service", name, ...)
 end
 
 do ------ request/select
@@ -1041,12 +1037,10 @@ end
 local function sys_service_init(t)
 	-- The first system message
 	_G.require = yieldable_require
-	if t.name then
-		local initfunc = assert(load(t.initfunc))
-		local func = assert(initfunc(t.name))
-		local handler = func(table.unpack(t.args))
-		ltask.dispatch(handler)
-	end
+	local initfunc = assert(load(t.initfunc))
+	local func = assert(initfunc(t.name))
+	local handler = func(table.unpack(t.args))
+	ltask.dispatch(handler)
 	if service == nil then
 		ltask.quit()
 	end
