@@ -1,5 +1,4 @@
 local boot = require "ltask.bootstrap"
-local ltask = require "ltask"
 
 local SERVICE_ROOT <const> = 1
 local MESSSAGE_SYSTEM <const> = 0
@@ -45,7 +44,7 @@ local function bootstrap()
 	new_service("root", SERVICE_ROOT)
 	boot.init_root(SERVICE_ROOT)
 	-- send init message to root service
-	local init_msg, sz = ltask.pack("init", {
+	local init_msg, sz = boot.pack("init", {
 		initfunc = config.initfunc,
 		name = "root",
 		args = {config}
@@ -62,7 +61,7 @@ local function bootstrap()
 end
 
 function print(...)
-	boot.pushlog(ltask.pack("info", ...))
+	boot.pushlog(boot.pack("info", ...))
 end
 
 local function start(cfg)

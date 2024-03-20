@@ -18,10 +18,7 @@ lm:lua_dll "ltask" {
             "/experimental:c11atomics"
         },
         ldflags = {
-            "-export:luaopen_ltask",
             "-export:luaopen_ltask_bootstrap",
-            "-export:luaopen_ltask_exclusive",
-            "-export:luaopen_ltask_root",
         },
     },
     gcc = {

@@ -987,6 +987,10 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "init_root", ltask_init_root },
 		{ "init_socket", ltask_init_socket },
 		{ "pushlog", ltask_boot_pushlog },
+		{ "pack", luaseri_pack },
+		{ "unpack", luaseri_unpack },
+		{ "remove", luaseri_remove },
+		{ "unpack_remove", luaseri_unpack_remove },
 		{ NULL, NULL },
 	};
 	
@@ -1167,18 +1171,6 @@ lmessage_receipt(lua_State *L) {
 		message_delete(m);
 		return 1;
 	}
-}
-
-static int
-luaseri_remove(lua_State *L) {
-	if (lua_isnoneornil(L, 1))
-		return 0;
-	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
-	void * data = lua_touserdata(L, 1);
-	size_t sz = luaL_checkinteger(L, 2);
-	(void)sz;
-	free(data);
-	return 0;
 }
 
 static int

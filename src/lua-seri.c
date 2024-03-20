@@ -903,6 +903,18 @@ luaseri_pack(lua_State *L) {
 	return 2;
 }
 
+int
+luaseri_remove(lua_State *L) {
+	if (lua_isnoneornil(L, 1))
+		return 0;
+	luaL_checktype(L, 1, LUA_TLIGHTUSERDATA);
+	void * data = lua_touserdata(L, 1);
+	size_t sz = luaL_checkinteger(L, 2);
+	(void)sz;
+	free(data);
+	return 0;
+}
+
 #ifdef TEST_SERI
 
 LUAMOD_API int
