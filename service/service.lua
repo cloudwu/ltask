@@ -1004,6 +1004,8 @@ end
 function sys_service.quit()
 	if service and service.quit then
 		return service.quit()
+	else
+		ltask.quit()
 	end
 end
 
