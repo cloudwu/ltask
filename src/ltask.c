@@ -423,15 +423,24 @@ steal_job(struct worker_thread * worker) {
 static int
 schedule_dispatch_worker(struct worker_thread *worker) {
 	schedule_dispatch(worker->task);
-	if (!worker_has_job(worker) && worker->binding.id == 0) {
-		service_id job = steal_job(worker);
-		if (job.id) {
-			debug_printf(worker->logger, "Steal service %x", job.id);
-			atomic_int_store(&worker->service_ready, job.id);
-		} else {
+	if (!worker_has_job(worker)) {
+		// no job to do
+		if (worker->binding.id) {
+			// bind a service
 			return 1;
+		} else {
+			// steal a job
+			service_id job = steal_job(worker);
+			if (job.id) {
+				debug_printf(worker->logger, "Steal service %x", job.id);
+				atomic_int_store(&worker->service_ready, job.id);
+			} else {
+				// steal fail
+				return 1;
+			}
 		}
 	}
+	// has a job
 	return 0;
 }
 
@@ -754,7 +763,7 @@ ltask_run(lua_State *L) {
 
 	int threads_count = worker_n + logthread - usemainthread;
 
-	struct task_context *ctx = (struct task_context *)lua_newuserdatauv(L, sizeof(*ctx) + (threads_count-1) * sizeof(struct thread), 0);
+	struct task_context *ctx = (struct task_context *)lua_newuserdatauv(L, sizeof(*ctx) + (threads_count-1+usemainthread) * sizeof(struct thread), 0);
 
 	ctx->logthread = logthread;
 	ctx->threads_count = threads_count;
@@ -787,7 +796,7 @@ ltask_wait(lua_State *L) {
 	luaL_checktype(L, 1, LUA_TUSERDATA);
 	struct task_context *ctx = (struct task_context *)lua_touserdata(L, 1);
 	thread_join(ctx->handle, ctx->threads_count);
-	if (!ctx->logthread) {
+	if (ctx->logthread) {
 		close_logger(ctx->task);
 	}
 	logqueue_delete(ctx->task->lqueue);

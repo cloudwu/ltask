@@ -904,7 +904,7 @@ function ltask.signal_handler(f)	-- root only
 	register_handler(MESSAGE_SIGNAL, f)
 end
 
-function ltask.idle_handler(f)	-- root only
+function ltask.idle_handler(f)
 	register_handler(MESSAGE_IDLE, f)
 end
 
