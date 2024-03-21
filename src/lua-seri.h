@@ -8,5 +8,6 @@
 int luaseri_pack(lua_State *L);
 int luaseri_unpack(lua_State *L);
 int luaseri_unpack_remove(lua_State *L);
+int luaseri_remove(lua_State *L);
 
 #endif
