@@ -1012,17 +1012,8 @@ luaopen_ltask_bootstrap(lua_State *L) {
 
 static inline const struct service_ud *
 getS(lua_State *L) {
-	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
-		luaL_error(L, "No service id, the VM is not inited by ltask");
-	}
-	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
-	lua_pop(L, 1);
-	return ud;
-}
-
-static inline const struct service_ud *
-getSup(lua_State *L) {
 	const struct service_ud * ud = (const struct service_ud *)lua_touserdata(L, lua_upvalueindex(1));
+	assert(ud);
 	return ud;
 }
 
@@ -1463,6 +1454,15 @@ luaopen_ltask(lua_State *L) {
 		{ "unpack", luaseri_unpack },
 		{ "remove", luaseri_remove },
 		{ "unpack_remove", luaseri_unpack_remove },
+		{ "timer_sleep", ltask_sleep },
+		{ NULL, NULL },
+	};
+
+	luaL_newlib(L, l);
+
+	// ltask api
+
+	luaL_Reg l2[] = {
 		{ "send_message", lsend_message },
 		{ "recv_message", lrecv_message },
 		{ "message_receipt", lmessage_receipt },
@@ -1472,7 +1472,6 @@ luaopen_ltask(lua_State *L) {
 		{ "worker_bind", lworker_bind },
 		{ "timer_add", ltask_timer_add },
 		{ "timer_update", ltask_timer_update },
-		{ "timer_sleep", ltask_sleep },
 		{ "now", ltask_now },
 		{ "pushlog", ltask_pushlog },
 		{ "poplog", ltask_poplog },
@@ -1481,24 +1480,32 @@ luaopen_ltask(lua_State *L) {
 		{ "mem_count", ltask_memcount },
 		{ "label", ltask_label },
 		{ "backtrace", lbacktrace },
-		{ "counter", NULL },
-		{ "cpucost", NULL },
 		{ "debuglog", ltask_debuglog },
 		{ "eventinit", ltask_eventinit },
 		{ "eventreset", ltask_eventreset },
 		{ NULL, NULL },
 	};
 
-	luaL_newlib(L, l);
+	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
+		luaL_error(L, "No service id, the VM is not inited by ltask");
+	}
+	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
+	lua_pop(L, 1);
+
+	lua_pushlightuserdata(L, (void *)ud);
+
+	luaL_setfuncs(L,l2,1);
+
+	// counter api
+	luaL_Reg l3[] = {
+		{ "counter", ltask_counter },
+		{ "cpucost", ltask_cpucost },
+		{ NULL, NULL },
+	};
 
 	uint64_t f = systime_frequency();
 	lua_pushinteger(L, f);
-	lua_pushcclosure(L, ltask_counter, 1);
-	lua_setfield(L, -2, "counter");
-
-	lua_pushinteger(L, f);
-	lua_pushcclosure(L, ltask_cpucost, 1);
-	lua_setfield(L, -2, "cpucost");
+	luaL_setfuncs(L,l3,1);
 
 	sys_init();
 	return 1;
@@ -1577,12 +1584,23 @@ luaopen_ltask_root(lua_State *L) {
 		return luaL_error(L, "ltask.root can only require once");
 	}
 	luaL_checkversion(L);
+
 	luaL_Reg l[] = {
 		{ "init_service", ltask_initservice },
 		{ "close_service", ltask_closeservice },
 		{ NULL, NULL },
 	};
 	
-	luaL_newlib(L, l);
+	luaL_newlibtable(L, l);
+
+	if (lua_getfield(L, LUA_REGISTRYINDEX, LTASK_KEY) != LUA_TSTRING) {
+		luaL_error(L, "No service id, the VM is not inited by ltask");
+	}
+	const struct service_ud * ud = (const struct service_ud *)luaL_checkstring(L, -1);
+	lua_pop(L, 1);
+
+	lua_pushlightuserdata(L, (void *)ud);
+	luaL_setfuncs(L,l,1);
+
 	return 1;
 }
