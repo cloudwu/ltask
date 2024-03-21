@@ -741,32 +741,35 @@ ltask_run(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
 	int usemainthread = 0;
 	int mainthread = -1;
+	const int worker_n = task->config->worker;
 	if (lua_isinteger(L, 1)) {
 		usemainthread = 1;
 		mainthread = luaL_checkinteger(L, 1);
 		if (mainthread >= 0) {
-			if (mainthread >= task->config->worker) {
+			if (mainthread >= worker_n) {
 				return luaL_error(L, "Invalid mainthread %d", mainthread);
 			}
 		}
 	}
-	
-	int threads_count = task->config->worker + logthread;
+
+	int threads_count = worker_n + logthread - usemainthread;
 
 	struct task_context *ctx = (struct task_context *)lua_newuserdatauv(L, sizeof(*ctx) + (threads_count-1) * sizeof(struct thread), 0);
+
 	ctx->logthread = logthread;
 	ctx->threads_count = threads_count;
 	ctx->task = task;
 	struct thread * t = ctx->t;
 	int i;
-	for (i=0;i<task->config->worker;i++) {
+	for (i=0;i<worker_n;i++) {
 		t[i].func = thread_worker;
 		t[i].ud = (void *)&task->workers[i];
 	}
-	atomic_int_store(&task->thread_count, threads_count-logthread);
+	task->thread_count = worker_n;
 	if (logthread) {
-		t[threads_count-1].func = thread_logger;
-		t[threads_count-1].ud = (void *)task;
+		int logthread_index = threads_count-1;
+		t[logthread_index].func = thread_logger;
+		t[logthread_index].ud = (void *)task;
 	}
 	sig_init();
 	if (usemainthread && mainthread >= 0) {

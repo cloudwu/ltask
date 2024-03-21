@@ -67,7 +67,6 @@ thread_start(struct thread * threads, int n, int usemainthread) {
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
 	if (usemainthread) {
 		++threads;
-		--n;
 	}
 	HANDLE *thread_handle = (HANDLE *)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,n*sizeof(HANDLE));
 	for (i=0;i<n;i++) {
@@ -171,7 +170,6 @@ thread_start(struct thread *threads, int n, int usemainthread) {
 	struct thread *mainthread = &threads[0];	// Use main thread for the 1st thread
 	if (usemainthread) {
 		++threads;
-		--n;
 	}
 	pthread_t *pid = (pthread_t *)malloc(n * sizeof(pthread_t));
 	int i;
