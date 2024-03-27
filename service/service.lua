@@ -76,7 +76,6 @@ local running_thread
 
 local session_coroutine_suspend_lookup = {}
 local session_coroutine_where = {}
-local session_coroutine_suspend = {}
 local session_coroutine_response = {}
 local session_coroutine_address = {}
 local session_id = 1
