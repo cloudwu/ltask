@@ -19,6 +19,7 @@ local SELECT_PROTO = {
 local ltask = require "ltask"
 
 local CURRENT_SERVICE <const> = ltask.self()
+local CURRENT_SERVICE_LABEL <const> = ltask.label()
 
 ltask.log = {}
 for _, level in ipairs {"info","error"} do
@@ -28,12 +29,12 @@ for _, level in ipairs {"info","error"} do
 		for i = 1, t.n do
 			str[#str+1] = tostring(t[i])
 		end
-		local message = table.concat(str, "\t")
+		local message = string.format("( %s ) %s", CURRENT_SERVICE_LABEL, table.concat(str, "\t"))
 		ltask.pushlog(ltask.pack(level, message))
 	end
 end
 
-ltask.log.info(string.format("${startup:%s}", ltask.label()))
+ltask.log.info "startup."
 
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
@@ -66,7 +67,7 @@ end
 function ltask.post_message(to, ...)
 	local r = post_message_(to, ...)
 	if r == nil then
-		error(string.format("${service:%d} is busy", to))
+		error(string.format("{service:%d} is busy", to))
 	end
 	return r
 end
@@ -376,7 +377,7 @@ end
 
 function ltask.call(address, ...)
 	if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
-		error(string.format("${service:%d} is dead", address))
+		error(string.format("{service:%d} is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
@@ -472,7 +473,7 @@ end
 
 function ltask.syscall(address, ...)
 	if not ltask.post_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...)) then
-		error(string.format("${service:%d} is dead", address))
+		error(string.format("{service:%d} is dead", address))
 	end
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
@@ -1069,7 +1070,7 @@ local function mainloop()
 	while true do
 		schedule_message()
 		if quit then
-			ltask.log.info "${quit}"
+			ltask.log.info "quit."
 			return
 		end
 		yield_service()

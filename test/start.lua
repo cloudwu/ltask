@@ -61,7 +61,13 @@ local function bootstrap()
 end
 
 function print(...)
-	boot.pushlog(boot.pack("info", ...))
+	local t = table.pack(...)
+	local str = {}
+	for i = 1, t.n do
+		str[#str+1] = tostring(t[i])
+	end
+	local message = string.format("( ltask.bootstrap ) %s", table.concat(str, "\t"))
+	boot.pushlog(boot.pack("info", message))
 end
 
 local function start(cfg)
