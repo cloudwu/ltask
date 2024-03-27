@@ -14,6 +14,9 @@ local S = {}
 local anonymous_services = {}
 local named_services = {}
 
+local root_quit = ltask.quit
+ltask.quit = function() end
+
 local function writelog()
 	while true do
 		local ti, _, msg, sz = ltask.poplog()
@@ -34,7 +37,7 @@ do
 			local errobj = ltask.unpack_remove(msg, sz)
 			ltask.log.error("Root fatal:", table.concat(errobj, "\n"))
 			writelog()
-			ltask.quit()
+			root_quit()
 		end
 	end
 
@@ -139,18 +142,16 @@ local function del_service(address)
 	local msg = root.close_service(address)
 	ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
 	if msg then
+		local err = "Service " .. address .. " has been quit."
 		for i=1, #msg, 2 do
 			local addr = msg[i]
 			local session = msg[i+1]
-			ltask.error(addr, session, "Service has been quit.")
+			ltask.error(addr, session, err)
 		end
 	end
 end
 
-local function quit()
-	if next(anonymous_services) ~= nil then
-		return
-	end
+function S.quit_ltask()
 	ltask.signal_handler(del_service)
 	for i = #named_services, 1, -1 do
 		local name = named_services[i]
@@ -161,7 +162,14 @@ local function quit()
 		end
 	end
 	writelog()
-	ltask.quit()
+	root_quit()
+end
+
+local function quit()
+	if next(anonymous_services) ~= nil then
+		return
+	end
+	ltask.send(ltask.self(), "quit_ltask")
 end
 
 local function signal_handler(from)

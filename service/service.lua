@@ -34,7 +34,7 @@ for _, level in ipairs {"info","error"} do
 	end
 end
 
-ltask.log.info "startup."
+ltask.log.info ( "startup " .. CURRENT_SERVICE )
 
 local yield_service = coroutine.yield
 local yield_session = coroutine.yield
@@ -279,9 +279,6 @@ local function report_error(addr, session, errobj)
 end
 
 function ltask.error(addr, session, errobj)
-	if session == 0 then
-		return
-	end
 	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
 	continue_session()
 	local type, msg, sz = ltask.message_receipt()
@@ -310,7 +307,7 @@ local function resume_session(co, ...)
 		session_coroutine_response[co] = nil
 
 		errobj = traceback(errobj, co)
-		if from == nil or from == 0 or session == 0 then
+		if from == nil or from == 0 then
 			ltask.log.error(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
@@ -1050,9 +1047,7 @@ local function schedule_message()
 	else
 		local co = session_coroutine_suspend_lookup[session]
 		if co == nil then
-			print("Unknown response session : ", session)
-			ltask.remove(msg, sz)
-			ltask.quit()
+			print("Unknown response session : ", session, "from", from, "type", type, ltask.unpack_remove(msg, sz))
 		else
 			session_coroutine_suspend_lookup[session] = nil
 			wakeup_session(co, type, session, msg, sz)

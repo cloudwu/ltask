@@ -47,7 +47,6 @@ print("PING sockevent", se)
 print(ltask.call(se , "ping", "PONG"))
 print(ltask.call(addr, "ping", "PONG"))
 ltask.send(addr, "exit")
-print(ltask.send(addr, "ping", "SEND"))
 
 local function run_task(what, ti)
 	if ti > 0 then
