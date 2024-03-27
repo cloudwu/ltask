@@ -16,18 +16,14 @@ local named_services = {}
 
 local function writelog()
 	while true do
-		local ti, id, msg, sz = ltask.poplog()
+		local ti, _, msg, sz = ltask.poplog()
 		if ti == nil then
 			break
 		end
 		local tsec = ti // 100
 		local msec = ti % 100
-		local t = table.pack(ltask.unpack_remove(msg, sz))
-		local str = {}
-		for i = 1, t.n do
-			str[#str+1] = tostring(t[i])
-		end
-		io.write(string.format("[%s.%02d : %d]\t%s\n", os.date("%c", tsec), msec, id, table.concat(str, "\t")))
+		local level, message = ltask.unpack_remove(msg, sz)
+		io.write(string.format("[%s.%02d][%-5s]%s\n", os.date("%Y-%m-%d %H:%M:%S", tsec), msec, level:upper(), message))
 	end
 end
 
