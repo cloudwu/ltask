@@ -15,12 +15,10 @@
 #define SERVICE_STATUS_RUNNING 3
 #define SERVICE_STATUS_DONE 4
 #define SERVICE_STATUS_DEAD 5
-#define SERVICE_STATUS_EXCLUSIVE 6
 
 struct service_pool;
 struct ltask_config;
 struct message;
-struct service;
 
 typedef struct {
 	unsigned int id;

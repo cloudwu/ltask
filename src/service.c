@@ -373,14 +373,6 @@ service_delete(struct service_pool *p, service_id id) {
 	}
 }
 
-static inline lua_State *
-service_L(struct service_pool *p, service_id id) {
-	struct service *S= get_service(p, id);
-	if (S == NULL)
-		return NULL;
-	return S->L;
-}
-
 const char *
 service_loadstring(struct service_pool *p, service_id id, const char *source, size_t source_sz, const char *chunkname) {
 	struct service *S= get_service(p, id);

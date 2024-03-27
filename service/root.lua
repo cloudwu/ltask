@@ -7,7 +7,6 @@ local MESSAGE_ERROR <const> = 3
 
 local MESSAGE_SCHEDULE_NEW <const> = 0
 local MESSAGE_SCHEDULE_DEL <const> = 1
-local MESSAGE_SCHEDULE_HANG <const> = 2
 
 local S = {}
 

@@ -33,7 +33,6 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 
 #define THREAD_NONE -1
 #define THREAD_WORKER(n) (n)
-#define THREAD_EXCLUSIVE(n) (n)
 
 #ifndef DEBUGLOG
 
@@ -826,13 +825,6 @@ ltask_deinit(lua_State *L) {
 	return 0;
 }
 
-struct preload_thread {
-	lua_State *L;
-	void *thread;
-	struct service *service;
-	atomic_int term;
-};
-
 // 0 : succ
 static int
 newservice(lua_State *L, struct ltask *task, service_id id, const char *label, const char *source, size_t source_sz, const char *chunkname, int worker_id) {
@@ -852,13 +844,11 @@ newservice(lua_State *L, struct ltask *task, service_id id, const char *label, c
 		lua_pushliteral(L, "set label fail");
 		return -1;
 	}
-	if (source) {
-		const char * err = service_loadstring(S, id, source, source_sz, chunkname);
-		if (err) {
-			lua_pushstring(L, err);
-			service_delete(S, id);
-			return -1;
-		}
+	const char * err = service_loadstring(S, id, source, source_sz, chunkname);
+	if (err) {
+		lua_pushstring(L, err);
+		service_delete(S, id);
+		return -1;
 	}
 	return 0;
 }
