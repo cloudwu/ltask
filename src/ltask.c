@@ -235,6 +235,12 @@ dispath_out_messages(struct ltask *task, const service_id done_job[], int done_j
 	}
 }
 
+static inline void
+kick_running(struct worker_thread * w, service_id id) {
+	w->task->blocked_service = 1;
+	w->waiting = id;	// will kick running later
+}
+
 static int
 count_freeslot(struct ltask *task) {
 	int i;
@@ -254,7 +260,8 @@ count_freeslot(struct ltask *task) {
 				if (q->head == q->tail)
 					q->head = q->tail = 0;
 				atomic_int_store(&w->service_ready, id.id);
-				worker_wakeup(w, id);
+				kick_running(w, id);
+				worker_wakeup(w);
 				debug_printf(task->logger, "Assign queue %x to worker %d", id.id, i);
 			}
 		}
@@ -282,8 +289,8 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 			} else {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
-					task->blocked_service = 1;
-					worker_wakeup(w, id);
+					kick_running(w, id);
+					worker_wakeup(w);
 					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
 				}
@@ -304,7 +311,7 @@ trigger_blocked_workers(struct ltask *task) {
 		struct worker_thread * w = &task->workers[i];
 		if (w->waiting.id != 0) {
 			service_id running = w->running;
-			if (running.id != w->waiting.id && running.id != 0) {
+			if (running.id != 0) {
 				// touch service who block the waiting service
 				int sockevent_id = service_sockevent_get(task->services, running);
 				if (sockevent_id >= 0) {
@@ -345,13 +352,11 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 			if ((use_busy || !w->busy) && (w->binding.id == 0 || use_binding)) {
 				service_id assign = worker_assign_job(w, id);
 				if (assign.id != 0) {
-					worker_wakeup(w, assign);
+					worker_wakeup(w);
 					debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
 					if (assign.id == id.id) {
 						// assign a none-binding service
 						break;
-					} else {
-						w->waiting.id = 0;
 					}
 				}
 			}
@@ -471,9 +476,8 @@ schedule_dispatch_worker(struct worker_thread *worker) {
 static void
 wakeup_all_workers(struct ltask *task) {
 	int i;
-	service_id dummy = { 0 };
 	for (i=0;i<task->config->worker;i++) {
-		worker_wakeup(&task->workers[i], dummy);
+		worker_wakeup(&task->workers[i]);
 	}
 }
 
@@ -574,6 +578,9 @@ thread_worker(void *ud) {
 		if (id.id) {
 			w->busy = 1;
 			w->running = id;
+			if (w->waiting.id == id.id) {
+				w->waiting.id = 0;
+			}
 			int status = service_status_get(P, id);
 			if (status != SERVICE_STATUS_DEAD) {
 				debug_printf(w->logger, "Run service %x", id.id);
@@ -601,6 +608,15 @@ thread_worker(void *ud) {
 			}
 			w->busy = 0;
 
+			// check binding
+
+			if (dead) {
+				if (w->binding.id == id.id)
+					w->binding.id = 0;
+			} else if (w->binding.id != id.id && service_binding_get(P, id) == w->worker_id) {
+				w->binding = id;
+			}
+
 			while (worker_complete_job(w)) {
 				// Can't complete (running -> done)
 				if (!acquire_scheduler(w)) {
@@ -608,13 +624,6 @@ thread_worker(void *ud) {
 						// Do it self
 						schedule_dispatch(w->task);
 						while (worker_complete_job(w)) {}	// CAS may fail spuriously
-					}
-					if (service_binding_get(P, id) == w->worker_id) {
-						if (dead) {
-							w->binding.id = 0;
-						} else {
-							w->binding = id;
-						}
 					}
 					schedule_dispatch_worker(w);
 					release_scheduler(w);

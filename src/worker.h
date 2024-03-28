@@ -78,7 +78,6 @@ worker_sleep(struct worker_thread *w) {
 			w->wakeup = 0;
 		} else {
 			w->sleeping = 1;
-			w->waiting.id = 0;
 			cond_wait(&w->trigger);
 			w->sleeping = 0;
 		}
@@ -87,12 +86,11 @@ worker_sleep(struct worker_thread *w) {
 }
 
 static inline int
-worker_wakeup(struct worker_thread *w, service_id waiting) {
+worker_wakeup(struct worker_thread *w) {
 	int sleeping;
 	cond_trigger_begin(&w->trigger);
 	sleeping = w->sleeping;
 	w->wakeup = 1;
-	w->waiting = waiting;
 	cond_trigger_end(&w->trigger, sleeping);
 	return sleeping;
 }
@@ -179,6 +177,7 @@ worker_steal_job(struct worker_thread *worker, struct service_pool *p) {
 		}
 		if (atomic_int_cas(&worker->service_ready, job, 0)) {
 			id = t;
+			worker->waiting.id = 0;
 		}
 	}
 	return id;
