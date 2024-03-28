@@ -254,7 +254,7 @@ count_freeslot(struct ltask *task) {
 				if (q->head == q->tail)
 					q->head = q->tail = 0;
 				atomic_int_store(&w->service_ready, id.id);
-				worker_wakeup(w);
+				worker_wakeup(w, id);
 				debug_printf(task->logger, "Assign queue %x to worker %d", id.id, i);
 			}
 		}
@@ -282,9 +282,8 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 			} else {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
-					w->waiting = id;
 					task->blocked_service = 1;
-					worker_wakeup(w);
+					worker_wakeup(w, id);
 					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
 				}
@@ -305,10 +304,7 @@ trigger_blocked_workers(struct ltask *task) {
 		struct worker_thread * w = &task->workers[i];
 		if (w->waiting.id != 0) {
 			service_id running = w->running;
-			if (running.id == w->waiting.id) {
-				// run waiting service now, do not need to trigger event
-				w->waiting.id = 0;
-			} else if (running.id != 0) {
+			if (running.id != w->waiting.id && running.id != 0) {
 				// touch service who block the waiting service
 				int sockevent_id = service_sockevent_get(task->services, running);
 				if (sockevent_id >= 0) {
@@ -349,7 +345,7 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 			if ((use_busy || !w->busy) && (w->binding.id == 0 || use_binding)) {
 				service_id assign = worker_assign_job(w, id);
 				if (assign.id != 0) {
-					worker_wakeup(w);
+					worker_wakeup(w, assign);
 					debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
 					if (assign.id == id.id) {
 						// assign a none-binding service
@@ -474,8 +470,9 @@ schedule_dispatch_worker(struct worker_thread *worker) {
 static void
 wakeup_all_workers(struct ltask *task) {
 	int i;
+	service_id dummy = { 0 };
 	for (i=0;i<task->config->worker;i++) {
-		worker_wakeup(&task->workers[i]);
+		worker_wakeup(&task->workers[i], dummy);
 	}
 }
 
