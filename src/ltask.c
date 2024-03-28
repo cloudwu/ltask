@@ -59,6 +59,7 @@ struct ltask {
 	atomic_int schedule_owner;
 	atomic_int active_worker;
 	atomic_int thread_count;
+	int blocked_service;		// binding service may block
 	FILE *logfile;
 };
 
@@ -281,16 +282,8 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 			} else {
 				id = worker_assign_job(w, id);
 				if (id.id != 0) {
-					if (w->busy) {
-						service_id running = w->running;
-						if (running.id != 0) {
-							// touch service who block the binding worker
-							int sockevent_id = service_sockevent_get(task->services, running);
-							if (sockevent_id >= 0) {
-								sockevent_trigger(&task->event[sockevent_id]);
-							}
-						}
-					}
+					w->waiting = id;
+					task->blocked_service = 1;
 					worker_wakeup(w);
 					debug_printf(task->logger, "Assign bind %x to worker %d", id.id, worker);
 					--free_slot;
@@ -299,6 +292,36 @@ prepare_task(struct ltask *task, service_id prepare[], int free_slot, int prepar
 		}
 	}
 	return prepare_n;
+}
+
+static void
+trigger_blocked_workers(struct ltask *task) {
+	if (!task->blocked_service)
+		return;
+	int i;
+	int blocked = 0;
+	const int worker_n = task->config->worker;
+	for (i=0;i<worker_n;i++) {
+		struct worker_thread * w = &task->workers[i];
+		if (w->waiting.id != 0) {
+			service_id running = w->running;
+			if (running.id == w->waiting.id) {
+				// run waiting service now, do not need to trigger event
+				w->waiting.id = 0;
+			} else if (running.id != 0) {
+				// touch service who block the waiting service
+				int sockevent_id = service_sockevent_get(task->services, running);
+				if (sockevent_id >= 0) {
+					sockevent_trigger(&task->event[sockevent_id]);
+				}
+				w->waiting.id = 0;
+			} else {
+				// continue waiting for blocked service running
+				blocked = 1;
+			}
+		}
+	}
+	task->blocked_service = blocked;
 }
 
 static void
@@ -329,6 +352,8 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 					worker_wakeup(w);
 					debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
 					if (assign.id == id.id) {
+						// assign a none-binding service
+						w->waiting.id = 0;
 						break;
 					}
 				}
@@ -378,6 +403,9 @@ schedule_dispatch(struct ltask *task) {
 
 	// Step 6
 	assign_prepare_task(task, jobs, prepare_n);
+
+	// Step 7
+	trigger_blocked_workers(task);
 }
 
 // 0 succ
@@ -606,7 +634,7 @@ thread_worker(void *ud) {
 				}
 			} while (w->service_done);	// retry if no one clear done flag
 
-			if (nojob) {
+			if (nojob && !w->task->blocked_service) {
 				// go to sleep
 				atomic_int_dec(&w->task->active_worker);
 				debug_printf(w->logger, "Sleeping (%d)", w->task->active_worker);
@@ -681,6 +709,8 @@ ltask_init(lua_State *L) {
 		sockevent_init(&task->event[i]);
 		atomic_int_init(&task->event_init[i], 0);
 	}
+
+	task->blocked_service = 0;
 
 	return 1;
 }
