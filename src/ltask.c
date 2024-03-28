@@ -349,8 +349,9 @@ assign_prepare_task(struct ltask *task, const service_id prepare[], int prepare_
 					debug_printf(task->logger, "Assign %x to worker %d", assign.id, worker_id-1);
 					if (assign.id == id.id) {
 						// assign a none-binding service
-						w->waiting.id = 0;
 						break;
+					} else {
+						w->waiting.id = 0;
 					}
 				}
 			}
