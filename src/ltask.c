@@ -613,7 +613,7 @@ thread_worker(void *ud) {
 			if (dead) {
 				if (w->binding.id == id.id)
 					w->binding.id = 0;
-			} else if (w->binding.id != id.id && service_binding_get(P, id) == w->worker_id) {
+			} else if (service_binding_get(P, id) == w->worker_id) {
 				w->binding = id;
 			}
 

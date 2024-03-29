@@ -163,10 +163,6 @@ worker_get_job(struct worker_thread *worker) {
 static inline service_id
 worker_steal_job(struct worker_thread *worker, struct service_pool *p) {
 	service_id id = { 0 };
-	if (worker->binding_queue.head != worker->binding_queue.tail) {
-		// binding job
-		return id;
-	}
 	int job = worker->service_ready;
 	if (job) {
 		service_id t = { job };
