@@ -78,7 +78,7 @@ local session_coroutine_suspend_lookup = {}
 local session_coroutine_where = {}
 local session_coroutine_response = {}
 local session_coroutine_address = {}
-local session_id = 1
+local session_id = 2	-- 1 is reserved for root
 
 local session_waiting = {}
 local wakeup_queue = {}
@@ -306,7 +306,7 @@ local function resume_session(co, ...)
 		session_coroutine_response[co] = nil
 
 		errobj = traceback(errobj, co)
-		if from == nil or from == 0 then
+		if from == nil or from == 0 or session <= 0 then
 			ltask.log.error(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)

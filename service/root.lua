@@ -40,7 +40,8 @@ do
 		end
 	end
 
-	ltask.suspend(0, coroutine.create(init_receipt))
+	-- The session of root init message must be 1
+	ltask.suspend(1, coroutine.create(init_receipt))
 end
 
 local multi_wait = ltask.multi_wait
