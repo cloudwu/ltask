@@ -146,7 +146,7 @@ local function del_service(address)
 		for i=1, #msg, 2 do
 			local addr = msg[i]
 			local session = msg[i+1]
-			ltask.error(addr, session, err)
+			ltask.rasie_error(addr, session, err)
 		end
 	end
 end

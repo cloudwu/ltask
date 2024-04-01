@@ -11,6 +11,8 @@ local RECEIPT_DONE <const> = 1
 local RECEIPT_ERROR <const> = 2
 local RECEIPT_BLOCK <const> = 3
 
+local SESSION_SEND_MESSAGE <const> = 0
+
 local SELECT_PROTO = {
 	system = MESSAGE_SYSTEM,
 	request = MESSAGE_REQUEST,
@@ -278,6 +280,10 @@ local function report_error(addr, session, errobj)
 end
 
 function ltask.error(addr, session, errobj)
+	if session == SESSION_SEND_MESSAGE then
+		ltask.log.error(tostring(errobj))
+		return
+	end
 	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
 	continue_session()
 	local type, msg, sz = ltask.message_receipt()
@@ -289,6 +295,11 @@ function ltask.error(addr, session, errobj)
 			end)
 		end
 	end
+end
+
+function ltask.rasie_error(addr, session, message)
+	local errobj = traceback(message, 4)
+	ltask.error(addr, session, errobj)
 end
 
 local function resume_session(co, ...)
@@ -306,7 +317,7 @@ local function resume_session(co, ...)
 		session_coroutine_response[co] = nil
 
 		errobj = traceback(errobj, co)
-		if from == nil or from == 0 or session <= 0 then
+		if from == nil or from == 0 then
 			ltask.log.error(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
@@ -355,7 +366,7 @@ local SESSION = {}
 local function send_response(...)
 	local session = session_coroutine_response[running_thread]
 
-	if session > 0 then
+	if session ~= SESSION_SEND_MESSAGE then
 		local from = session_coroutine_address[running_thread]
 		ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
 	end
@@ -464,7 +475,7 @@ local ignore_response ; do
 end
 
 function ltask.send(address, ...)
-	return ltask.post_message(address, 0, MESSAGE_REQUEST, ltask.pack(...))
+	return ltask.post_message(address, SESSION_SEND_MESSAGE, MESSAGE_REQUEST, ltask.pack(...))
 end
 
 function ltask.syscall(address, ...)
@@ -866,7 +877,7 @@ function ltask.quit()
 	ltask.fork(function ()
 		for co, addr in pairs(session_coroutine_address) do
 			local session = session_coroutine_response[co]
-			ltask.error(addr, session, "Service has been quit.")
+			ltask.rasie_error(addr, session, "Service has been quit.")
 		end
 		quit = true
 	end)
