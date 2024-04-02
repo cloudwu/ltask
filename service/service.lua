@@ -281,7 +281,6 @@ end
 
 function ltask.error(addr, session, errobj)
 	if session == SESSION_SEND_MESSAGE then
-		ltask.log.error(tostring(errobj))
 		return
 	end
 	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
@@ -317,7 +316,7 @@ local function resume_session(co, ...)
 		session_coroutine_response[co] = nil
 
 		errobj = traceback(errobj, co)
-		if from == nil or from == 0 then
+		if from == nil or from == 0 or session == SESSION_SEND_MESSAGE then
 			ltask.log.error(tostring(errobj))
 		else
 			ltask.error(from, session, errobj)
