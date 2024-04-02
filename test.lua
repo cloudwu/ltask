@@ -1,7 +1,9 @@
 local start = require "test.start"
 start {
+    core = {
+        debuglog = "=", -- stdout
+    },
     service_path = "service/?.lua;test/?.lua",
-    lua_path = "lualib/?.lua",
     bootstrap = {
         {
             name = "timer",
@@ -19,5 +21,4 @@ start {
             name = "bootstrap",
         },
     },
-    debuglog = "=", -- stdout
 }
