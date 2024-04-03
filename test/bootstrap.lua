@@ -28,17 +28,22 @@ print("Get request 2")
 
 --- test request
 
-local req = ltask.request
-	{ addr, "wait", 30, id = 1 }
-	{ addr, "wait", 20, id = 2 }
-	{ addr, "wait", 10, id = 3 }
-	{ addr, "wait", 5, id = 4 }
+local tasks = {
+	{ ltask.call, addr, "wait", 30, id = 1 },
+	{ ltask.call, addr, "wait", 20, id = 2 },
+	{ ltask.call, addr, "wait", 10, id = 3 },
+	{ ltask.call, addr, "wait", 5, id = 4 },
+	{ ltask.sleep, 25 },
+}
 
-for req, resp in req:select(25) do
-	if resp then
+for req, resp in ltask.parallel(tasks) do
+	if not req.id then
+		break
+	end
+	if not resp.error then
 		print("REQ", req.id, resp[1])
 	else
-		print("ERR", req.id, req.error)
+		print("ERR", req.id, resp.error)
 	end
 end
 
