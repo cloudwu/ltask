@@ -789,82 +789,70 @@ end
 
 -------------
 
-do
-	local function run_parallel(task)
-		local ret = {}
-		local n = #task
-		if n == 0 then
-			return ret
-		end
-		local function resp(i, ...)
-			ret[i] = { ... }
-		end
-		local idx = 1
-		local function get_task()
-			local r = idx
-			idx = idx + 1
-			return task[r], r
-		end
-		local supervisor_running = false
-		local run_task	-- function
-		local function next_task()
-			local i = idx
-			idx = idx + 1
-			local t = task[i]
-			if t then
-				run_task(t, i)
-			end
-		end
-		local function run_supervisor()
-			supervisor_running = false	-- only one supervisor
-			next_task()
-		end
-		function run_task(t, i)
-			if not supervisor_running then
-				supervisor_running = true
-				ltask.fork(run_supervisor)
-			end
-			resp(i, pcall(t[1], table.unpack(t, 2)))
-			n = n - 1
-			if n == 0 then
-				ltask.wakeup(ret)
-			else
-				return next_task()
-			end
-		end
-		ltask.fork(next_task)
-		ltask.wait(ret)
-		return ret
+function ltask.parallel(task)
+	local n = #task
+	if n == 0 then
+		return function () end
 	end
-
-	function ltask.parallel(task)
-		local ret = run_parallel(task)
-		local i = 1
-		local err
-		return function()
-			while true do
-				local r = ret[i]
-				local t = task[i]
-				i = i + 1
-				if r then
-					if r[1] then
-						return t, table.unpack(r, 2)
-					else
-						err = true
-					end
-				elseif err then
-					local err_msg = {}
-					for _, v in ipairs(ret) do
-						if not v[1] then
-							table.insert(err_msg, tostring(v[2]))
-						end
-					end
-					error(table.concat(err_msg, "\n"))
-				else
-					return
-				end
-			end
+	local ret_n = 0
+	local ret = {}
+	local token
+	local function rethrow(res)
+		rethrow_error(2, res.error)
+	end
+	local function resp(t, ok, ...)
+		local res = {}
+		if ok then
+			res = table.pack(...)
+		else
+			res.error = ...
+			res.rethrow = rethrow
 		end
+		ret[#ret+1] = { t, res }
+		if token then
+			ltask.wakeup(token)
+			token = nil
+		end
+	end
+	local idx = 1
+	local supervisor_running = false
+	local run_task	-- function
+	local function next_task()
+		local i = idx
+		idx = idx + 1
+		local t = task[i]
+		if t then
+			run_task(t)
+		end
+	end
+	local function run_supervisor()
+		supervisor_running = false	-- only one supervisor
+		next_task()
+	end
+	local function error_handler(errobj)
+		return traceback(errobj, 4)
+	end
+	function run_task(t)
+		if not supervisor_running then
+			supervisor_running = true
+			ltask.fork(run_supervisor)
+		end
+		resp(t, xpcall(t[1], error_handler, table.unpack(t, 2)))
+		next_task()
+	end
+	ltask.fork(next_task)
+	return function()
+		if ret_n == n then
+			return
+		end
+		while #ret == 0 do
+			token = {}
+			ltask.wait(token)
+		end
+		ret_n = ret_n + 1
+		local t = ret[#ret]
+		ret[#ret] = nil
+		return t[1], t[2]
 	end
 end
 
