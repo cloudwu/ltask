@@ -449,30 +449,6 @@ do	-- async object
 	end
 end
 
-local ignore_response ; do
-	local function no_response_()
-		while true do
-			local type, session, msg, sz = yield_session()
-			if type == MESSAGE_ERROR then
-				local errobj = ltask.unpack_remove(msg, sz)
-				errobj = traceback(errobj, session_coroutine_where[session] or "")
-				ltask.log.error(tostring(errobj))
-			else
-				ltask.remove(msg, sz)
-			end
-			session_coroutine_where[session] = nil
-		end
-	end
-
-	local no_response_handler = coroutine.create(no_response_)
-	coroutine.resume(no_response_handler)
-
-	function ignore_response(session_id, where)
-		session_coroutine_where[session_id] = where
-		session_coroutine_suspend_lookup[session_id] = no_response_handler
-	end
-end
-
 function ltask.send(address, ...)
 	return ltask.post_message(address, SESSION_SEND_MESSAGE, MESSAGE_REQUEST, ltask.pack(...))
 end
@@ -637,164 +613,13 @@ function ltask.spawn_service(name, ...)
     return ltask.call(SERVICE_ROOT, "spawn_service", name, ...)
 end
 
-do ------ request/select
-	local function request_thread(self)
-		local co = new_thread(function()
-			while true do
-				local type, session, msg, sz = yield_session()
-				if session == self._timeout then
-					self.timeout = true
-					self._timeout = nil
-				elseif type == MESSAGE_RESPONSE then
-					self._resp[session] = { ltask.unpack_remove(msg, sz) }
-				else
-					self._request = self._request - 1
-					local req = self._sessions[session]
-					req.error = (ltask.unpack_remove(msg, sz))
-					local err = self._error
-					if not err then
-						err = {}
-						self._error = err
-					end
-					err[#err+1] =req
-				end
-				ltask.wakeup(self)
-			end
-		end)
-		coroutine.resume(co)
-		return co
-	end
-
-	local function send_requests(self, timeout)
-		local sessions = {}
-		self._sessions = sessions
-		self._where = create_traceback(running_thread, 3)
-		self._resp = {}
-		local request_n = 0
-		local err
-		local req_thread = request_thread(self)
-		for i = 1, #self do
-			local req = self[i]
-			-- send request
-			local address = req[1]
-			local proto = req.proto and assert(SELECT_PROTO[req.proto]) or MESSAGE_REQUEST
-			local session = session_id
-			session_coroutine_suspend_lookup[session] = req_thread
-			session_id = session_id + 1
-
-			if not ltask.post_message(address, session, proto, ltask.pack(table.unpack(req, 2))) then
-				err = err or {}
-				req.error = true	-- address is dead
-				err[#err+1] = req
-			else
-				sessions[session] = req
-				request_n = request_n + 1
-			end
-		end
-		if timeout then
-			session_coroutine_suspend_lookup[session_id] = req_thread
-			ltask.timer_add(session_id, timeout)
-			self._timeout = session_id
-			session_id = session_id + 1
-		end
-		self._request = request_n
-		self._error = err
-	end
-
-	local function ignore_timout(self)
-		if self._timeout then
-			ignore_response(self._timeout, self._where)
-			self._timeout = nil
-		end
-	end
-
-	local function pop_error(self)
-		local req = table.remove(self._error)
-		if req then
-			req.error = tostring(traceback(req.error, 4))
-			return req
-		end
-	end
-
-	local function request_iter(self)
-		local timeout_session = self._timeout
-		return function()
-			if self._error and #self._error > 0 then
-				return pop_error(self)
-			end
-
-			local session, resp = next(self._resp)
-			if session == nil then
-				if self._request == 0 then
-					return
-				end
-				if self.timeout then
-					return
-				end
-				ltask.wait(self)
-				if self.timeout then
-					return
-				end
-				session, resp = next(self._resp)
-				if session == nil then
-					return pop_error(self)
-				end
-			end
-
-			self._request = self._request - 1
-			local req = self._sessions[session]
-			self._resp[session] = nil
-			self._sessions[session] = nil
-			return req, resp
-		end
-	end
-
-	local request_meta = {}	; request_meta.__index = request_meta
-
-	function request_meta:add(obj)
-		assert(self._request == nil)	-- select starts
-		self[#self+1] = obj
-		return self
-	end
-
-	request_meta.__call = request_meta.add
-
-	function request_meta:close()
-		if self._request > 0 then
-			for session, req in pairs(self._sessions) do
-				if not self._resp[session] then
-					ignore_response(session, self._where)
-				end
-			end
-			self._request = 0
-		end
-		ignore_timout(self)
-	end
-
-	request_meta.__close = request_meta.close
-
-	function request_meta:select(timeout)
-		send_requests(self, timeout)
-		return request_iter(self), nil, nil, self
-	end
-
-	function ltask.request(obj)
-		local ret = setmetatable({}, request_meta)
-		if obj then
-			return ret(obj)
-		end
-		return ret
-	end
-end
-
--------------
-
 function ltask.parallel(task)
 	local n = #task
 	if n == 0 then
 		return function () end
 	end
-	local ret_n = 0
+	local ret_head = 0
+	local ret_tail = 0
 	local ret = {}
 	local token
 	local function rethrow(res)
@@ -808,7 +633,8 @@ function ltask.parallel(task)
 			res.error = ...
 			res.rethrow = rethrow
 		end
-		ret[#ret+1] = { t, res }
+		ret_tail = ret_tail + 1
+		ret[ret_tail] = { t, res }
 		if token then
 			ltask.wakeup(token)
 			token = nil
@@ -842,16 +668,16 @@ function ltask.parallel(task)
 	end
 	ltask.fork(next_task)
 	return function()
-		if ret_n == n then
+		if ret_tail == n and ret_head == ret_tail then
 			return
 		end
-		while #ret == 0 do
+		while ret_head == ret_tail do
 			token = {}
 			ltask.wait(token)
 		end
-		ret_n = ret_n + 1
-		local t = ret[#ret]
-		ret[#ret] = nil
+		ret_head = ret_head + 1
+		local t = ret[ret_head]
+		ret[ret_head] = nil
 		return t[1], t[2]
 	end
 end
