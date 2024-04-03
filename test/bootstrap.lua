@@ -68,7 +68,7 @@ local task = {
 }
 
 for req, resp in ltask.parallel(task) do
-	print(resp)
+	print(table.unpack(resp, 1, resp.n))
 end
 
 print "Bootstrap End"
