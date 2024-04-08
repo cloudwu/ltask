@@ -13,11 +13,6 @@ local RECEIPT_BLOCK <const> = 3
 
 local SESSION_SEND_MESSAGE <const> = 0
 
-local SELECT_PROTO = {
-	system = MESSAGE_SYSTEM,
-	request = MESSAGE_REQUEST,
-}
-
 local ltask = require "ltask"
 
 local CURRENT_SERVICE <const> = ltask.self()
@@ -44,40 +39,9 @@ local function continue_session()
 	coroutine.yield(true)
 end
 
------ send message ------
-local post_message_ ; do
-	function post_message_(to, session, type, msg, sz)
-		ltask.send_message(to, session, type, msg, sz)
-		continue_session()
-		local type, msg, sz = ltask.message_receipt()
-		if type == RECEIPT_DONE then
-			return true
-		elseif type == RECEIPT_ERROR then
-			ltask.remove(msg, sz)
-			return false
-		elseif type == RECEIPT_BLOCK then
-			-- todo: send again
-			ltask.remove(msg, sz)
-			return nil
-		else
-			-- RECEIPT_RESPONSE(4) (msg is session)
-			return msg
-		end
-	end
-end
-
-function ltask.post_message(to, ...)
-	local r = post_message_(to, ...)
-	if r == nil then
-		error(string.format("{service:%d} is busy", to))
-	end
-	return r
-end
-
 local running_thread
 
 local session_coroutine_suspend_lookup = {}
-local session_coroutine_where = {}
 local session_coroutine_response = {}
 local session_coroutine_address = {}
 local session_id = 2	-- 1 is reserved for root
@@ -259,18 +223,20 @@ local function rethrow_error(level, errobj)
 	end
 end
 
-local function report_error(addr, session, errobj)
-	ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, ltask.pack("report_error", addr, session, errobj))
+function ltask.post_message(addr, session, type, msg, sz)
+	ltask.send_message(addr, session, type, msg, sz)
 	continue_session()
+	return ltask.message_receipt()
+end
+
+local function send_blocked_message(addr, session, type, ...)
+	local msg, sz = ltask.pack("send_retry", addr, session, type, ...)
 	while true do
-		local type, msg, sz = ltask.message_receipt()
-		if type == RECEIPT_DONE then
+		local receipt_type = ltask.post_message(SERVICE_ROOT, SESSION_SEND_MESSAGE, MESSAGE_REQUEST, msg, sz)
+		if receipt_type == RECEIPT_DONE then
 			break
-		elseif type == RECEIPT_BLOCK then
-			-- retry "report_error"
+		elseif receipt_type == RECEIPT_BLOCK then
 			ltask.sleep(1)
-			ltask.send_message(SERVICE_ROOT, 0, MESSAGE_REQUEST, msg, sz)
-			continue_session()
 		else
 			-- error (root quit?)
 			ltask.remove(msg, sz)
@@ -279,26 +245,45 @@ local function report_error(addr, session, errobj)
 	end
 end
 
-function ltask.error(addr, session, errobj)
-	if session == SESSION_SEND_MESSAGE then
+local function post_request_message(addr, session, type, msg, sz)
+	local receipt_type, receipt_msg, receipt_sz = ltask.post_message(addr, session, type, msg, sz)
+	if receipt_type == RECEIPT_DONE then
 		return
 	end
-	ltask.send_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
-	continue_session()
-	local type, msg, sz = ltask.message_receipt()
-	if type ~= RECEIPT_DONE then
-		ltask.remove(msg, sz)
-		if type == RECEIPT_BLOCK then
-			ltask.timeout(0, function ()
-				report_error(addr, session, errobj)
-			end)
+	if receipt_type == RECEIPT_ERROR then
+		ltask.remove(receipt_msg, receipt_sz)
+		if session ~= SESSION_SEND_MESSAGE then
+			error(string.format("{service:%d} is dead", addr))
 		end
+	else
+		--RECEIPT_BLOCK
+		-- todo: send again
+		ltask.remove(receipt_msg, receipt_sz)
+		error(string.format("{service:%d} is busy", addr))
+	end
+end
+
+local function post_response_message(addr, session, type, msg, sz)
+	local receipt_type, receipt_msg, receipt_sz = ltask.post_message(addr, session, type, msg, sz)
+	if receipt_type == RECEIPT_DONE then
+		return
+	end
+	if receipt_type == RECEIPT_ERROR then
+		ltask.remove(receipt_msg, receipt_sz)
+	else
+		--RECEIPT_BLOCK
+		ltask.fork(function ()
+			send_blocked_message(addr, session, type, ltask.unpack_remove(receipt_msg, receipt_sz))
+		end)
 	end
 end
 
 function ltask.rasie_error(addr, session, message)
+	if session == SESSION_SEND_MESSAGE then
+		return
+	end
 	local errobj = traceback(message, 4)
-	ltask.error(addr, session, errobj)
+	post_response_message(addr, session, MESSAGE_ERROR, ltask.pack(errobj))
 end
 
 local function resume_session(co, ...)
@@ -319,7 +304,7 @@ local function resume_session(co, ...)
 		if from == nil or from == 0 or session == SESSION_SEND_MESSAGE then
 			ltask.log.error(tostring(errobj))
 		else
-			ltask.error(from, session, errobj)
+			post_response_message(from, session, MESSAGE_ERROR, ltask.pack(errobj))
 		end
 		coroutine.close(co)
 	end
@@ -367,7 +352,7 @@ local function send_response(...)
 
 	if session ~= SESSION_SEND_MESSAGE then
 		local from = session_coroutine_address[running_thread]
-		ltask.post_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
+		post_response_message(from, session, MESSAGE_RESPONSE, ltask.pack(...))
 	end
 
 	-- End session
@@ -382,9 +367,7 @@ function ltask.suspend(session, co)
 end
 
 function ltask.call(address, ...)
-	if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
-		error(string.format("{service:%d} is dead", address))
-	end
+	post_request_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
 	local type, session, msg, sz = yield_session()
@@ -429,10 +412,7 @@ do	-- async object
 	end
 
 	function async:request(address, ...)
-		if not ltask.post_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...)) then
-			-- service dead
-			return
-		end
+		post_request_message(address, session_id, MESSAGE_REQUEST, ltask.pack(...))
 		session_coroutine_suspend_lookup[session_id] = self._wait
 		self._sessions[session_id] = true
 		session_id = session_id + 1
@@ -450,13 +430,11 @@ do	-- async object
 end
 
 function ltask.send(address, ...)
-	return ltask.post_message(address, SESSION_SEND_MESSAGE, MESSAGE_REQUEST, ltask.pack(...))
+	post_request_message(address, SESSION_SEND_MESSAGE, MESSAGE_REQUEST, ltask.pack(...))
 end
 
 function ltask.syscall(address, ...)
-	if not ltask.post_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...)) then
-		error(string.format("{service:%d} is dead", address))
-	end
+	post_request_message(address, session_id, MESSAGE_SYSTEM, ltask.pack(...))
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	session_id = session_id + 1
 	local type, session,  msg, sz = yield_session()
@@ -471,7 +449,9 @@ end
 function ltask.sleep(ti)
 	session_coroutine_suspend_lookup[session_id] = running_thread
 	if ti == 0 then
-		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
+		if RECEIPT_DONE ~= ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE) then
+			ltask.timer_add(session_id, 0)
+		end
 	else
 		ltask.timer_add(session_id, ti)
 	end
@@ -499,7 +479,9 @@ function ltask.timeout(ti, func)
 	local co = new_thread(func)
 	session_coroutine_suspend_lookup[session_id] = co
 	if ti == 0 then
-		ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE)
+		if RECEIPT_DONE ~= ltask.post_message(CURRENT_SERVICE, session_id, MESSAGE_RESPONSE) then
+			ltask.timer_add(session_id, 0)
+		end
 	else
 		ltask.timer_add(session_id, ti)
 	end
