@@ -10,10 +10,6 @@ function timer.quit()
 	ltask.quit()
 end
 
-local send_message = ltask.send_message
-local coroutine_yield = coroutine.yield
-local message_receipt = ltask.message_receipt
-
 local blocked
 
 local mcount = 0
@@ -27,10 +23,8 @@ local function send_all_messages()
 		if blocked_queue then
 			blocked_queue[#blocked_queue+1] = session
 		else
-			send_message(addr, session, MESSAGE_RESPONSE)
 			mcount = mcount + 1
-			coroutine_yield(true)
-			if message_receipt() == RECEIPT_BLOCK then
+			if ltask.post_message(addr, session, MESSAGE_RESPONSE) == RECEIPT_BLOCK then
 				blocked = blocked or {}
 				blocked[addr] = { session }
 			end
@@ -41,9 +35,7 @@ end
 local function send_blocked_queue(addr, queue)
 	local n = #queue
 	for i = 1, n do
-		send_message(addr, queue[i], MESSAGE_RESPONSE)
-		coroutine_yield(true)
-		if message_receipt() == RECEIPT_BLOCK then
+		if ltask.post_message(addr, queue[i], MESSAGE_RESPONSE) == RECEIPT_BLOCK then
 			table.move(queue, i, n, 1)
 			return true
 		end

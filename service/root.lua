@@ -3,10 +3,16 @@ local root = require "ltask.root"
 
 local config = ...
 
+local SERVICE_SYSTEM <const> = 0
+
 local MESSAGE_ERROR <const> = 3
 
 local MESSAGE_SCHEDULE_NEW <const> = 0
 local MESSAGE_SCHEDULE_DEL <const> = 1
+
+local RECEIPT_ERROR <const> = 2
+local RECEIPT_BLOCK <const> = 3
+local RECEIPT_RESPONCE <const> = 4
 
 local S = {}
 
@@ -44,9 +50,60 @@ do
 	ltask.suspend(1, coroutine.create(init_receipt))
 end
 
-local multi_wait = ltask.multi_wait
-local multi_wakeup = ltask.multi_wakeup
-local multi_interrupt = ltask.multi_interrupt
+local retry_queue
+
+local function send_retry_queue(addr, queue)
+	local n = #queue
+	for i = 1, n do
+		local type = ltask.post_message(addr, table.unpack(queue[i]))
+		if type == RECEIPT_BLOCK then
+			table.move(queue, i, n, 1)
+			return true
+		elseif type == RECEIPT_ERROR then
+			for j = i, n do
+				local msg, sz = queue[j][3], queue[j][4]
+				ltask.remove(msg, sz)
+			end
+			return
+		end
+	end
+end
+
+local function send_all_retry()
+	while true do
+		local removed = {}
+		for addr, queue in pairs(retry_queue) do
+			if not send_retry_queue(addr, queue) then
+				removed[addr] = true
+			end
+		end
+		for addr in pairs(removed) do
+			retry_queue[addr] = nil
+		end
+		if next(retry_queue) == nil then
+			break
+		end
+		ltask.sleep(1)
+	end
+	retry_queue = nil
+end
+
+function S.send_retry(addr, session, type, ...)
+	local message = { session, type, ltask.pack(...) }
+	if retry_queue then
+		local q = retry_queue[addr]
+		if q then
+			q[#q+1] = message
+		else
+			retry_queue[addr] = { message }
+		end
+	else
+		retry_queue = {
+			[addr] = { message },
+		}
+		ltask.fork(send_all_retry)
+	end
+end
 
 local function register_service(address, name)
 	if named_services[name] then
@@ -55,15 +112,15 @@ local function register_service(address, name)
 	anonymous_services[address] = nil
 	named_services[#named_services+1] = name
 	named_services[name] = address
-	multi_wakeup("unique."..name, address)
-end
-
-function S.report_error(addr, session, errobj)
-	ltask.error(addr, session, errobj)
+	ltask.multi_wakeup("unique."..name, address)
 end
 
 local function spawn(t)
-	local address = assert(ltask.post_message(0, 0, MESSAGE_SCHEDULE_NEW))
+	local type, address = ltask.post_message(SERVICE_SYSTEM, 0, MESSAGE_SCHEDULE_NEW)
+	if type ~= RECEIPT_RESPONCE then
+		-- RECEIPT_ERROR
+		error("send MESSAGE_SCHEDULE_NEW failed.")
+	end
 	anonymous_services[address] = true
 	assert(root.init_service(address, t.name, config.service_source, config.service_chunkname, t.worker_id))
 	ltask.syscall(address, "init", {
@@ -88,7 +145,7 @@ local function spawn_unique(t)
 			local ok, addr = pcall(spawn, t)
 			if not ok then
 				local err = addr
-				multi_interrupt(key, err)
+				ltask.multi_interrupt(key, err)
 				unique[t.name] = nil
 				return
 			end
@@ -96,7 +153,7 @@ local function spawn_unique(t)
 			unique[t.name] = nil
 		end)
 	end
-	return multi_wait(key)
+	return ltask.multi_wait(key)
 end
 
 function S.spawn(name, ...)
@@ -111,7 +168,7 @@ function S.queryservice(name)
 	if address then
 		return address
 	end
-	return multi_wait("unique."..name)
+	return ltask.multi_wait("unique."..name)
 end
 
 function S.uniqueservice(name, ...)
@@ -140,7 +197,7 @@ local function del_service(address)
 		end
 	end
 	local msg = root.close_service(address)
-	ltask.post_message(0,address, MESSAGE_SCHEDULE_DEL)
+	ltask.post_message(SERVICE_SYSTEM, address, MESSAGE_SCHEDULE_DEL)
 	if msg then
 		local err = "Service " .. address .. " has been quit."
 		for i=1, #msg, 2 do
