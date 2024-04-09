@@ -4,7 +4,7 @@ CFLAGS=-g -Wall
 LUAINC?=-I/usr/local/include
 
 ifeq ($(OS),Windows_NT)
-  LIBS=-lwinmm -lws2_32
+  LIBS=-lwinmm -lws2_32 -D_WIN32_WINNT=0x0601
   SHARED=--shared
   SO=dll
   LUALIB?=-L/usr/local/bin -llua54
