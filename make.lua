@@ -8,6 +8,9 @@ lm:lua_dll "ltask" {
         lm.mode=="debug" and "DEBUGTHREADNAME",
     },
     windows = {
+        defines = {
+            "_WIN32_WINNT=0x0601"
+        },
         links = {
             "ws2_32",
             "winmm",
