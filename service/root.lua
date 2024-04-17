@@ -156,6 +156,38 @@ local function spawn_unique(t)
 	return ltask.multi_wait(key)
 end
 
+function S.tracelog(timeout)
+	local tlog = {}
+	local tasks = {}
+	local n = 1
+	for addr in pairs(anonymous_services) do
+		tasks[n] = { ltask.syscall, addr, "traceback" , addr = addr } ; n = n + 1
+		tlog[addr] = {}
+	end
+	for _, name in ipairs(named_services) do
+		local addr = named_services[name]
+		tasks[n] = { ltask.syscall, addr, "traceback" , addr = addr, name = name } ; n = n + 1
+		tlog[addr] = { name = name }
+	end
+	if timeout then
+		tasks[n] = { ltask.sleep, timeout }
+	end
+
+	for req, resp in ltask.parallel(tasks) do
+		if not req.addr then
+			-- timeout
+			break
+		end
+		if not resp.error then
+			tlog[req.addr].traceback = resp[1]
+		else
+			tlog[req.addr].error = resp.error
+		end
+	end
+
+	return tlog
+end
+
 function S.spawn(name, ...)
 	return spawn {
 		name = name,

@@ -816,6 +816,16 @@ function sys_service.memory()
 	return collectgarbage "count" * 1024
 end
 
+function sys_service.traceback()
+	local tlog = {}
+	local n = 1
+	for session, co in pairs(session_coroutine_suspend_lookup) do
+		tlog[n] = "Session : " ..  tostring(session) ; n = n + 1
+		tlog[n] = debug.traceback(co) ; n = n + 1
+	end
+	return table.concat(tlog, "\n")
+end
+
 local function system(command, ...)
 	local s = sys_service[command]
 	if not s then
