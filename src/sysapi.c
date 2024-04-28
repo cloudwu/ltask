@@ -26,6 +26,10 @@ sys_sleep(unsigned int msec) {
 
 #include <windows.h>
 
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#    define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x2
+#endif
+
 NTSTATUS NTAPI NtSetTimerResolution(ULONG RequestedResolution, BOOLEAN Set, PULONG ActualResolution);
 
 static int support_hrtimer = 0;
