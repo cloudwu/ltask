@@ -62,11 +62,11 @@ sockevent_init(struct sockevent *e) {
 
 static inline void
 sockevent_close(struct sockevent *e) {
-	if (e->pipe[0] == socket_invalid) {
+	if (e->pipe[0] != socket_invalid) {
 		closesocket(e->pipe[0]);
 		e->pipe[0] = socket_invalid;
 	}
-	if (e->pipe[1] == socket_invalid) {
+	if (e->pipe[1] != socket_invalid) {
 		closesocket(e->pipe[1]);
 		e->pipe[1] = socket_invalid;
 	}
