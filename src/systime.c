@@ -1,5 +1,7 @@
 #if defined(__MINGW32__) || defined(__MINGW64__)
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
+#endif
 #endif
 
 #if defined(_WIN32)
