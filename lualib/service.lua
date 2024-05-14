@@ -567,6 +567,7 @@ end
 function ltask.fork(func, ...)
 	local co = new_thread(func)
 	wakeup_queue[#wakeup_queue+1] = {co, ...}
+	return co
 end
 
 function ltask.current_session()
