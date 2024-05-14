@@ -859,6 +859,9 @@ local function schedule_message()
 		-- new session for this message
 		local co = new_session(f, from, session)
 		wakeup_session(co, type, msg, sz)
+	elseif from == nil then
+		-- no message
+		return
 	else
 		local co = session_coroutine_suspend_lookup[session]
 		if co == nil then

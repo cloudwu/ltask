@@ -26,6 +26,11 @@ print("Waiting request 2")
 async:wait()
 print("Get request 2")
 
+print("--------------")
+ltask.send(addr, "func1", "first")
+ltask.send(addr, "func2")
+ltask.send(addr, "func1", "second")
+
 --- test request
 
 local tasks = {

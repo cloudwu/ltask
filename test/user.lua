@@ -32,6 +32,47 @@ function S.ping(...)
 	return "PING", ...
 end
 
+local task_queue = {}
+
+local function add_task(f, ...)
+	local tail = task_queue.t
+	if tail then
+		task_queue[tail] = table.pack( f, ... )
+		task_queue.t = tail + 1
+	else
+		-- empty
+		task_queue.h = 1
+		task_queue.t = 1
+		f(...)
+		while task_queue.h < task_queue.t do
+			local h = task_queue.h
+			local task = task_queue[h]
+			task_queue[h] = nil
+			task_queue.h = h + 1
+			task[1](table.unpack(task, 2, task.n))			
+		end
+		task_queue.h = nil
+		task_queue.t = nil
+	end
+end
+
+local QUEUE = setmetatable({}, {
+	__newindex = function(_, name, f)
+		S[name] = function(...)
+			add_task(f, ...)
+		end
+	end })
+
+function QUEUE.func1(v)
+	print("func1 begin", v)
+	ltask.sleep(1)
+	print("func1 end", v)
+end
+
+function QUEUE.func2()
+	print("func2")
+end
+
 function S.exit()
 	ltask.quit()
 end
