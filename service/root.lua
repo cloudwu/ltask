@@ -47,7 +47,7 @@ do
 	end
 
 	-- The session of root init message must be 1
-	ltask.suspend(1, coroutine.create(init_receipt))
+	ltask.suspend(1, init_receipt)
 end
 
 local retry_queue
