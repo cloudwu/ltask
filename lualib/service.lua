@@ -722,6 +722,8 @@ function ltask.idle_handler(f)
 	register_handler(MESSAGE_IDLE, f)
 end
 
+ltask.running = coroutine_running
+
 local yieldable_require; do
 	local require = _G.require
 	local loaded = package.loaded
