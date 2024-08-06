@@ -852,10 +852,9 @@ ltask_deinit(lua_State *L) {
 		worker_destory(&task->workers[i]);
 	}
 
-	timer_destroy(task->timer);
-
 	service_destory(task->services);
 	queue_delete(task->schedule);
+	timer_destroy(task->timer);
 
 	lua_pushnil(L);
 	lua_setfield(L, LUA_REGISTRYINDEX, "LTASK_GLOBAL");
