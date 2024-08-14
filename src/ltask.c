@@ -1260,7 +1260,7 @@ ltask_now(lua_State *L) {
 
 static int
 ltask_counter(lua_State *L) {
-	uint64_t freq = lua_tointeger(L, lua_upvalueindex(1));
+	uint64_t freq = lua_tointeger(L, lua_upvalueindex(2));
 	uint64_t ti = systime_counter();
 	lua_pushnumber(L, (double)ti / freq);
 	return 1;
@@ -1372,7 +1372,7 @@ static int
 ltask_cpucost(lua_State *L) {
 	const struct service_ud *S = getS(L);
 	uint64_t cpucost = service_cpucost(S->task->services, S->id);
-	uint64_t freq = lua_tointeger(L, lua_upvalueindex(1));
+	uint64_t freq = lua_tointeger(L, lua_upvalueindex(2));
 	lua_pushnumber(L, (double)cpucost / freq);
 	return 1;
 }
@@ -1530,8 +1530,9 @@ luaopen_ltask(lua_State *L) {
 	};
 
 	uint64_t f = systime_frequency();
+	lua_pushlightuserdata(L, (void *)ud);
 	lua_pushinteger(L, f);
-	luaL_setfuncs(L,l3,1);
+	luaL_setfuncs(L,l3,2);
 
 	sys_init();
 	return 1;
