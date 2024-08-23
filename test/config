@@ -1,9 +1,0 @@
-service_path = "service/?.lua;examples/timer/?.lua"
-lua_path = "lualib/?.lua"
-bootstrap = { "bootstrap" }
-logger = { "logger" }
-exclusive = {
-	"timer",
-	"sockevent",
-}
-debuglog = "log.txt"
