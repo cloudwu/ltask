@@ -254,6 +254,20 @@ function S.quit_ltask()
 	root_quit()
 end
 
+do -- external message handler
+	local external_forwarding, external_name
+
+	function S.external_forward(id, name)
+		external_forwarding, external_name = id, name
+	end
+
+	function S.external(msg)
+		if external_forwarding then
+			ltask.send(external_forwarding, external_name or "external", msg)
+		end
+	end
+end
+
 local function quit()
 	if next(anonymous_services) ~= nil then
 		return

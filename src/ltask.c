@@ -400,10 +400,12 @@ send_external_message(struct ltask *task, struct message *msg) {
 
 static void
 dispatch_external_messages(struct ltask *task) {
+	int send = 0;
 	if (task->external_last_message) {
 		if (send_external_message(task, task->external_last_message))
 			return;	// block
 		task->external_last_message = NULL;
+		send = 1;
 	}
 	void * msg = NULL;
 	while ((msg = queue_pop_ptr(task->external_message))) {
@@ -420,6 +422,11 @@ dispatch_external_messages(struct ltask *task) {
 			task->external_last_message = em;
 			return;
 		}
+		send = 1;
+	}
+	if (send) {
+		service_id root = {1};
+		check_message_to(task, root);
 	}
 }
 
