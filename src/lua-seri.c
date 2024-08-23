@@ -861,16 +861,25 @@ seri_pack(lua_State *L, int from, int *sz) {
 }
 
 void *
-seri_packstring(const char * str, int sz) {
+seri_packstring(const char * str, int sz, void *p, size_t *output) {
 	struct block temp;
 	temp.next = NULL;
 	struct write_block wb;
 	wb_init(&wb, &temp);
 
+	if (sz == 0) {
+		sz = strlen(str);
+	}
 	wb_string(&wb, str, sz);
+	if (p) {
+		wb_pointer(&wb, p, TYPE_USERDATA_POINTER);
+	}
 	assert(wb.head == &temp);
 
 	void * buffer = seri(&temp, wb.len);
+	if (output) {
+		*output = wb.len + 4;
+	}
 
 	wb_free(&wb);
 

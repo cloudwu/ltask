@@ -48,6 +48,7 @@ config_load(lua_State *L, int index, struct ltask_config *config) {
 	config->queue_sending = config_getint(L, index, "queue_sending", DEFAULT_QUEUE_SENDING);
 	config->queue_sending = align_pow2(config->queue_sending);
 	config->max_service = config_getint(L, index, "max_service", DEFAULT_MAX_SERVICE);
+	config->external_queue = config_getint(L, index, "external_queue", 0);
 	config->max_service = align_pow2(config->max_service);
 	if (lua_getfield(L, index, "crashlog") != LUA_TSTRING) {
 		config->crashlog[0] = 0;

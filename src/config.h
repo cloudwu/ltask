@@ -14,6 +14,7 @@ struct ltask_config {
 	int queue;
 	int queue_sending;
 	int max_service;
+	int external_queue;
 	char crashlog[128];
 };
 
