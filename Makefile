@@ -1,13 +1,13 @@
 CFLAGS=-g -Wall
 # CFLAGS+=-DDEBUGLOG
 
-LUAINC?=-I/usr/local/include
+LUAINC?=`pkgconf lua --cflags`
 
 ifeq ($(OS),Windows_NT)
   LIBS=-lwinmm -lws2_32 -D_WIN32_WINNT=0x0601 -lntdll
   SHARED=--shared
   SO=dll
-  LUALIB?=-L/usr/local/bin -L$(MINGW)/bin -llua54
+  LUALIB?=`pkgconf lua --libs`
 else ifeq ($(OS), Darwin)
   SO=so
   SHARED= -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
