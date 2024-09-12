@@ -65,7 +65,7 @@ do -- begin coroutine
 	end -- end coroutine.resume
 	
 	function coroutine.status(co)
-		local status = ltask_coroutines(co)
+		local status = coroutine_status(co)
 		if status == "suspended" then
 			if ltask_coroutines[co] == false then
 				return "blocked"
