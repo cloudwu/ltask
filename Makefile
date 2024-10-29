@@ -3,18 +3,20 @@ CFLAGS=-g -Wall
 
 LUAINC?=`pkgconf lua --cflags`
 
-ifeq ($(OS),Windows_NT)
+UNAME := $(shell uname)
+ifeq ($(UNAME), Linux)
+  SHARED=--shared -fPIC
+  SO=so
+  LIBS=-lpthread
+else ifeq ($(UNAME), Darwin)
+  SO=so
+  SHARED= -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
+else
+  # Windows
   LIBS=-lwinmm -lws2_32 -D_WIN32_WINNT=0x0601 -lntdll
   SHARED=--shared
   SO=dll
   LUALIB?=`pkgconf lua --libs`
-else ifeq ($(OS), Darwin)
-  SO=so
-  SHARED= -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
-else
-  SHARED=--shared -fPIC
-  SO=so
-  LIBS=-lpthread
 endif
 
 all : ltask.$(SO)
