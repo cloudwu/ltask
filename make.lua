@@ -14,6 +14,7 @@ lm:lua_dll "ltask" {
         links = {
             "ws2_32",
             "winmm",
+            "ntdll",
         }
     },
     msvc = {
