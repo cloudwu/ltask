@@ -103,7 +103,7 @@ free_service(struct service *S) {
 	}
 	message_delete(S->out);
 	message_delete(S->bounce);
-	S->receipt = MESSAGE_RECEIPT_NONE;
+	free(S);
 }
 
 void
