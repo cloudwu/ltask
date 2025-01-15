@@ -20,7 +20,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     
     lua test.lua
 else
-    make LUAINC="-I/usr/local/include/" CC="$LLVM_SDK_PATH/bin/clang" CFLAGS="-fsanitize=address -g -Wall"
+    make LUAINC="-I/usr/local/include/" CFLAGS="-fsanitize=address -g -Wall"
     export ASAN_OPTIONS=fast_unwind_on_malloc=false
     ASAN_LIB_ABS_PATH=$(gcc -print-file-name=libasan.so)
     gcc -Wl,-undefined,dynamic_lookup --shared .github/asan_assets/dlclose.c -o .github/asan_assets/libdlclose.so
