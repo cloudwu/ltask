@@ -1,0 +1,26 @@
+name: Asan Check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e_tests:
+    strategy:
+      matrix:
+        # ref: https://github.com/actions/runner-images
+        os: [ubuntu-20.04, macos-13]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install lua
+        run: |
+          wget http://www.lua.org/ftp/lua-5.4.7.tar.gz
+          tar -xzvf lua-5.4.7.tar.gz
+          cd lua-5.4.7
+          make linux test & make install
+          cp src/*.h /usr/local/include/
+      - name: run asan check
+        run: |
+          bash .github/asan_assets/test_mem.sh
