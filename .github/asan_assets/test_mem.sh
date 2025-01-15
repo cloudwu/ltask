@@ -3,6 +3,8 @@
 make clean
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
+    # The version of Clang that comes pre-installed with MacOS is outdated.
+    brew install llvm
     LLVM_SDK_PATH=$(brew --prefix llvm)
     if [ -z "$LLVM_SDK_PATH" ]; then
         echo "Error: please run command: brew install llvm."

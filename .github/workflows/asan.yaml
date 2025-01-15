@@ -12,14 +12,15 @@ jobs:
       matrix:
         # ref: https://github.com/actions/runner-images
         os: [ubuntu-20.04, macos-13]
+        luaVersion: ["5.4.7", "5.4.6", "5.4.5"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: install lua
         run: |
-          wget http://www.lua.org/ftp/lua-5.4.7.tar.gz
-          tar -xzvf lua-5.4.7.tar.gz
-          cd lua-5.4.7
+          wget http://www.lua.org/ftp/lua-${{ matrix.luaVersion }}.tar.gz
+          tar -xzvf lua-${{ matrix.luaVersion }}.tar.gz
+          cd lua-${{ matrix.luaVersion }}
           sudo make
           sudo make install
           sudo cp src/*.h /usr/local/include/
