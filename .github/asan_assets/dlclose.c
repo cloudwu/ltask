@@ -1,5 +1,5 @@
-// 这个文件用来解决动态库提前 close 导致 asan 报告出现  <unknown module> 拿不到符号的问题
-// NOTICE: 不要在生产环境中使用
+// This file is used to resolve an issue where the dynamic library is closed prematurely, causing asan to report that it cannot retrieve symbols. <unknown module> 
+// NOTICE: Do not use in a production environment
 #include <stdio.h>
 
 #if defined(__APPLE__)
