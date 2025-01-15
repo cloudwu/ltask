@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e_tests:
+  mem_test:
     strategy:
+      fail-fast: false
       matrix:
         # ref: https://github.com/actions/runner-images
         os: [ubuntu-20.04, macos-13]
