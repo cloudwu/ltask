@@ -1,0 +1,29 @@
+name: Asan Check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  mem_test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # ref: https://github.com/actions/runner-images
+        os: [ubuntu-20.04, macos-13]
+        luaVersion: ["5.4.7", "5.4.6", "5.4.5"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install lua
+        run: |
+          wget http://www.lua.org/ftp/lua-${{ matrix.luaVersion }}.tar.gz
+          tar -xzvf lua-${{ matrix.luaVersion }}.tar.gz
+          cd lua-${{ matrix.luaVersion }}
+          sudo make
+          sudo make install
+          sudo cp src/*.h /usr/local/include/
+      - name: run asan check
+        run: |
+          bash .github/asan_assets/test_mem.sh
