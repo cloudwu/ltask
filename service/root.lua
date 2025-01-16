@@ -38,8 +38,8 @@ end
 do
 	-- root init response to itself
 	local function init_receipt(type, session, msg, sz)
+		local errobj = ltask.unpack_remove(msg, sz)
 		if type == MESSAGE_ERROR then
-			local errobj = ltask.unpack_remove(msg, sz)
 			ltask.log.error("Root fatal:", table.concat(errobj, "\n"))
 			writelog()
 			root_quit()
