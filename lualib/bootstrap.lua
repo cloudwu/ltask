@@ -40,4 +40,5 @@ return {
 	start = start,
 	wait = wait,
 	external_sender = boot.external_sender,
+	log_sender = boot.log_sender,
 }

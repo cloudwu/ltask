@@ -1086,6 +1086,16 @@ ltask_external_sender(lua_State *L) {
 	return 2;
 }
 
+static int
+ltask_log_sender(lua_State *L) {
+	luaL_checktype(L, 1, LUA_TUSERDATA);
+	struct task_context *ctx = (struct task_context *)lua_touserdata(L, 1);
+	struct ltask *task = ctx->task;
+	lua_pushlightuserdata(L, pushlog);
+	lua_pushlightuserdata(L, task);
+	return 2;
+}
+
 LUAMOD_API int
 luaopen_ltask_bootstrap(lua_State *L) {
 	static atomic_int init = 0;
@@ -1109,6 +1119,7 @@ luaopen_ltask_bootstrap(lua_State *L) {
 		{ "remove", luaseri_remove },
 		{ "unpack_remove", luaseri_unpack_remove },
 		{ "external_sender", ltask_external_sender },
+		{ "log_sender", ltask_log_sender },
 		{ NULL, NULL },
 	};
 	
