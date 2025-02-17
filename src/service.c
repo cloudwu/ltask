@@ -8,6 +8,12 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
+#ifndef LTASK_EXTERNAL_OPENLIBS
+#define LTASK_EXTERNAL_OPENLIBS luaL_openlibs
+#else
+void LTASK_EXTERNAL_OPENLIBS(lua_State *L);
+#endif
+
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -132,7 +138,7 @@ init_service(lua_State *L) {
 	void *ud = lua_touserdata(L, 1);
 	size_t sz = lua_tointeger(L, 2);
 	init_service_key(L, ud, sz);
-	luaL_openlibs(L);
+	LTASK_EXTERNAL_OPENLIBS(L);
 	lua_gc(L, LUA_GCGEN, 0, 0);
 	return 0;
 }
