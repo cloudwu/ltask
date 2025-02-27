@@ -510,6 +510,10 @@ local function wait_response(type, ...)
 	end
 end
 
+function ltask.current_token()
+	return running_thread
+end
+
 function ltask.wait(token)
 	token = token or running_thread
 	assert(session_waiting[token] == nil)
