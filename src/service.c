@@ -269,7 +269,11 @@ service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *p
 	assert(S != NULL && S->L == NULL && S->status == SERVICE_STATUS_UNINITIALIZED);
 	lua_State *L;
 	memset(&S->stat, 0, sizeof(S->stat));
+#if LUA_VERSION_NUM == 505
+	L = lua_newstate(service_alloc, &S->stat, luaL_makeseed(NULL));
+#else
 	L = lua_newstate(service_alloc, &S->stat);
+#endif
 	if (L == NULL)
 		return 1;
 	lua_pushcfunction(L, init_service);
@@ -394,6 +398,9 @@ service_loadstring(struct service_pool *p, service_id id, const char *source, si
 	return NULL;
 }
 
+#define writestringerror(s,p) \
+	(fprintf(stderr, (s), (p)), fflush(stderr))
+
 int
 service_resume(struct service_pool *p, service_id id) {
 	struct service *S= get_service(p, id);
@@ -416,13 +423,13 @@ service_resume(struct service_pool *p, service_id id) {
 		return 1;
 	}
 	if (!lua_checkstack(L, LUA_MINSTACK)) {
-		lua_writestringerror("%s\n", lua_tostring(L, -1));
+		writestringerror("%s\n", lua_tostring(L, -1));
 		lua_pop(L, 1);
 		return 1;
 	}
 	lua_pushfstring(L, "Service %d error: %s", id.id, lua_tostring(L, -1));
 	luaL_traceback(L, L, lua_tostring(L, -1), 0);
-	lua_writestringerror("%s\n", lua_tostring(L, -1));
+	writestringerror("%s\n", lua_tostring(L, -1));
 	lua_pop(L, 3);
 	return 1;
 }
