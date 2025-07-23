@@ -400,12 +400,18 @@ do	-- async object
 
 	function ltask.async()
 		local obj
+		local function try_raise_error(type, msg, sz)
+			local err = ltask.unpack_remove(msg, sz)
+			if type == MESSAGE_ERROR then
+				obj._err = err
+			end
+		end
 		local function wait_func(type, session, msg, sz)
 			-- ignore type
-			ltask.unpack_remove(msg, sz)
+			try_raise_error(type, msg, sz)
 			while still_session(obj, session) do
 				type, session, msg, sz = yield_session()
-				ltask.unpack_remove(msg, sz)
+				try_raise_error(type, msg, sz)
 			end
 
 			if obj._wakeup then
@@ -434,6 +440,11 @@ do	-- async object
 				self._wakeup = self
 				ltask.wait(self)
 			end
+		end
+		local err = self._err
+		if err ~= nil then
+			self._err = nil
+			rethrow_error(2, err)
 		end
 		self._wakeup = nil
 	end
