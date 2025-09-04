@@ -126,6 +126,7 @@ local function spawn(t)
 	ltask.syscall(address, "init", {
 		initfunc = t.initfunc or config.initfunc,
 		name = t.name,
+		path = t.path,
 		args = t.args or {},
 	})
 	return address
@@ -188,9 +189,16 @@ function S.tracelog(timeout)
 	return tlog
 end
 
+local SERVICE_PATH
+
+function S.servicepath(path)
+	SERVICE_PATH = path
+end
+
 function S.spawn(name, ...)
 	return spawn {
 		name = name,
+		path = SERVICE_PATH,
 		args = {...},
 	}
 end
@@ -206,6 +214,7 @@ end
 function S.uniqueservice(name, ...)
 	return spawn_unique {
 		name = name,
+		path = SERVICE_PATH,
 		args = {...},
 	}
 end

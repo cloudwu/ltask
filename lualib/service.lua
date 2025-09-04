@@ -605,6 +605,10 @@ function ltask.no_response()
 	session_coroutine_response[running_thread] = nil
 end
 
+function ltask.servicepath(path)
+    return ltask.call(SERVICE_ROOT, "servicepath", path)
+end
+
 function ltask.spawn(name, ...)
     return ltask.call(SERVICE_ROOT, "spawn", name, ...)
 end
@@ -812,7 +816,7 @@ local function sys_service_init(t)
 	-- The first system message
 	_G.require = yieldable_require
 	local initfunc = assert(load(t.initfunc))
-	local func = assert(initfunc(t.name))
+	local func = assert(initfunc(t.name, t.path))
 	local handler = func(table.unpack(t.args))
 	ltask.dispatch(handler)
 	if service == nil then
