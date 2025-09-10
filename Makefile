@@ -23,6 +23,7 @@ all : ltask.$(SO)
 
 SRCS=\
  src/ltask.c \
+ src/mqueue.c \
  src/queue.c \
  src/sysinfo.c \
  src/service.c \
