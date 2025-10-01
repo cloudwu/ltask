@@ -1,0 +1,3 @@
+leak:libobjc.A.dylib
+leak:libxpc.dylib
+leak:libSystem.B.dylib
