@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         # ref: https://github.com/actions/runner-images
-        os: [ubuntu-20.04, macos-13]
+        os: [ubuntu-latest, macos-latest]
         luaVersion: ["5.4.7", "5.4.6", "5.4.5"]
     runs-on: ${{ matrix.os }}
     steps:
