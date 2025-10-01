@@ -18,7 +18,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # export DYLD_PRINT_LIBRARIES=1 X=1
     export DYLD_INSERT_LIBRARIES="./.github/asan_assets/libdlclose.dylib:$ASAN_LIB_ABS_PATH"
     # see https://github.com/llvm/llvm-project/issues/115992
-    export ASAN_OPTIONS="detect_leaks=1:suppressions=./github/asan_assets/lsan.supp"
+    export LSAN_OPTIONS="suppressions=./.github/asan_assets/lsan.supp"
     
     lua test.lua
 else
