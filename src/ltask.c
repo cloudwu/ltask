@@ -51,14 +51,14 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 #define MAINTHREAD_STATUS_INVALID 4
 
 struct mainthread_session {
-	service_id srv;
+	atomic_int srv;
 	struct cond ev;
 	int status;
 };
 
 static void
 mainthread_init(struct mainthread_session *mt) {
-	mt->srv.id = 0;
+	atomic_int_init(&mt->srv, 0);
 	mt->status = MAINTHREAD_STATUS_NONE;
 	cond_create(&mt->ev);
 }
@@ -66,13 +66,14 @@ mainthread_init(struct mainthread_session *mt) {
 static void
 mainthread_deinit(struct mainthread_session *mt) {
 	assert(mt->status == MAINTHREAD_STATUS_NONE || mt->status == MAINTHREAD_STATUS_YIELD);
+	atomic_int_store(&mt->srv, 0);
 	mt->status = MAINTHREAD_STATUS_INVALID;
 	cond_release(&mt->ev);
 }
 
 static inline int
 mainthread_current(struct mainthread_session *mt, service_id id) {
-	return mt->srv.id == id.id && mt->status == MAINTHREAD_STATUS_READY;
+	return mt->status == MAINTHREAD_STATUS_READY && atomic_int_load(&mt->srv) == id.id;
 }
 
 static inline void
@@ -208,7 +209,7 @@ collect_done_job(struct ltask *task, service_id done_job[]) {
 	for (i=0;i<worker_n;i++) {
 		struct worker_thread * w = &task->workers[i];
 		service_id job = worker_done_job(w);
-		if (job.id && !mainthread_current(&task->mt, job)) {
+		if (job.id) {
 			debug_printf(task->logger, "Service %x is done", job.id);
 			done_job[done_job_n++] = job;
 		}
@@ -695,6 +696,7 @@ thread_worker(void *ud) {
 				} else if (mainthread_current(&w->task->mt, id)) {
 					service_status_set(P, id, SERVICE_STATUS_MAINTHREAD);
 					mainthread_trigger(&w->task->mt);
+					w->running.id = 0;
 				} else {
 					service_status_set(P, id, SERVICE_STATUS_DONE);
 				}
@@ -712,17 +714,19 @@ thread_worker(void *ud) {
 				w->binding = id;
 			}
 
-			while (worker_complete_job(w)) {
-				// Can't complete (running -> done)
-				if (!acquire_scheduler(w)) {
-					if (worker_complete_job(w)) {
-						// Do it self
-						schedule_dispatch(w->task);
-						while (worker_complete_job(w)) {}	// CAS may fail spuriously
+			if (w->running.id) {
+				while (worker_complete_job(w)) {
+					// Can't complete (running -> done)
+					if (!acquire_scheduler(w)) {
+						if (worker_complete_job(w)) {
+							// Do it self
+							schedule_dispatch(w->task);
+							while (worker_complete_job(w)) {}	// CAS may fail spuriously
+						}
+						schedule_dispatch_worker(w);
+						release_scheduler(w);
+						break;
 					}
-					schedule_dispatch_worker(w);
-					release_scheduler(w);
-					break;
 				}
 			}
 		} else {
@@ -1157,7 +1161,8 @@ lmainthread_wait(lua_State *L) {
 		if (mt->status != MAINTHREAD_STATUS_READY)
 			luaL_error(L, "mainthread not ready");
 		
-		service_id id = mt->srv;
+		service_id id = { atomic_int_load(&mt->srv) };
+		atomic_int_store(&mt->srv, 0);
 		
 		debug_printf(task->logger, "service %x run in mainthread", id.id);
 		assert(service_status_get(P, id) == SERVICE_STATUS_MAINTHREAD);
@@ -1165,6 +1170,9 @@ lmainthread_wait(lua_State *L) {
 			// dead
 			debug_printf(task->logger, "service %x is dead in mainthread", id.id);
 			service_status_set(P, id, SERVICE_STATUS_DEAD);
+			if (id.id != SERVICE_ID_ROOT) {
+				service_send_signal(P, id);
+			}
 		} else {
 			service_status_set(P, id, SERVICE_STATUS_SCHEDULE);
 			switch (mt->status) {
@@ -1178,14 +1186,17 @@ lmainthread_wait(lua_State *L) {
 			default:
 				debug_printf(task->logger, "service %x is dead in mainthread", id.id);
 				service_status_set(P, id, SERVICE_STATUS_DEAD);
+				if (id.id != SERVICE_ID_ROOT) {
+					service_send_signal(P, id);
+				}
 				schedule_back(task, id);
 				return luaL_error(L, "Can't yield in mainthread (status = %d), kill service (%d)", mt->status, id.id);
 			}
-			schedule_back(task, id);
 		}
+		schedule_back(task, id);
 		mt->status = MAINTHREAD_STATUS_NONE;
 	} while (!finish);
-	return 0;
+	atomic_int_store(&mt->srv, 0);	return 0;
 }
 
 LUAMOD_API int
@@ -1660,9 +1671,12 @@ static int
 mainthread_change_status(lua_State *L, int status) {
 	const struct service_ud *S = getS(L);
 	struct ltask *task = S->task;
-	task->mt.srv = S->id;
-	task->mt.status = status;
-	return 0;
+	if (atomic_int_cas(&task->mt.srv, 0, S->id.id)) {
+		task->mt.status = status;
+		return 0;
+	} else {
+		return luaL_error(L, "Change mainthread status fail");
+	}
 }
 
 static int
