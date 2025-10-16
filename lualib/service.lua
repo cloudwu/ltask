@@ -743,6 +743,22 @@ end
 
 ltask.running = coroutine_running
 
+do
+	local enter = assert(ltask.mainthread_enter)
+	local leave = assert(ltask.mainthread_leave)
+
+	function ltask.mainthread_run(f, ...)
+		enter()
+		continue_session()
+		local ok, err = pcall(f, ...)
+		leave()
+		continue_session()
+		if not ok then
+			error(err)
+		end
+	end
+end
+
 local yieldable_require; do
 	local require = _G.require
 	local loaded = package.loaded
