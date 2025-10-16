@@ -693,6 +693,7 @@ thread_worker(void *ud) {
 						service_send_signal(P, id);
 					}
 				} else if (mainthread_current(&w->task->mt, id)) {
+					service_status_set(P, id, SERVICE_STATUS_MAINTHREAD);
 					mainthread_trigger(&w->task->mt);
 				} else {
 					service_status_set(P, id, SERVICE_STATUS_DONE);
@@ -1159,6 +1160,7 @@ lmainthread_wait(lua_State *L) {
 		service_id id = mt->srv;
 		
 		debug_printf(task->logger, "service %x run in mainthread", id.id);
+		assert(service_status_get(P, id) == SERVICE_STATUS_MAINTHREAD);
 		if (service_resume(P, id)) {
 			// dead
 			debug_printf(task->logger, "service %x is dead in mainthread", id.id);
