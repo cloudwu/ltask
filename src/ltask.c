@@ -26,6 +26,7 @@
 #include "logqueue.h"
 #include "systime.h"
 #include "threadsig.h"
+#include "semaphore.h"
 
 LUAMOD_API int luaopen_ltask(lua_State *L);
 LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
@@ -52,7 +53,7 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 
 struct mainthread_session {
 	atomic_int srv;
-	struct cond ev;
+	struct sem ev;
 	int status;
 };
 
@@ -60,7 +61,7 @@ static void
 mainthread_init(struct mainthread_session *mt) {
 	atomic_int_init(&mt->srv, 0);
 	mt->status = MAINTHREAD_STATUS_NONE;
-	cond_create(&mt->ev);
+	sem_init(&mt->ev);
 }
 
 static void
@@ -68,7 +69,7 @@ mainthread_deinit(struct mainthread_session *mt) {
 	assert(mt->status == MAINTHREAD_STATUS_NONE || mt->status == MAINTHREAD_STATUS_YIELD);
 	atomic_int_store(&mt->srv, 0);
 	mt->status = MAINTHREAD_STATUS_INVALID;
-	cond_release(&mt->ev);
+	sem_deinit(&mt->ev);
 }
 
 static inline int
@@ -78,8 +79,7 @@ mainthread_current(struct mainthread_session *mt, service_id id) {
 
 static inline void
 mainthread_trigger(struct mainthread_session *mt) {
-	cond_trigger_begin(&mt->ev);
-	cond_trigger_end(&mt->ev, 1);
+	sem_release(&mt->ev);
 }
 
 struct ltask {
@@ -1153,11 +1153,13 @@ lmainthread_wait(lua_State *L) {
 	if (mt->status != MAINTHREAD_STATUS_NONE && mt->status != MAINTHREAD_STATUS_READY)
 		return luaL_error(L, "mainthread in use");
 	struct service_pool * P = task->services;
+	int inf = !lua_toboolean(L, 1);
 	int finish = 0;
 	do {
-		cond_wait_begin(&mt->ev);
-		cond_wait(&mt->ev);
-		cond_wait_end(&mt->ev);
+		if (sem_acquire(&mt->ev, inf)) {
+			lua_pushboolean(L, 1);	// fail
+			return 1;
+		}
 		if (mt->status != MAINTHREAD_STATUS_READY)
 			luaL_error(L, "mainthread not ready");
 		
@@ -1196,7 +1198,8 @@ lmainthread_wait(lua_State *L) {
 		schedule_back(task, id);
 		mt->status = MAINTHREAD_STATUS_NONE;
 	} while (!finish);
-	atomic_int_store(&mt->srv, 0);	return 0;
+	atomic_int_store(&mt->srv, 0);
+	return 0;
 }
 
 LUAMOD_API int
