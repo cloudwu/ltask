@@ -18,7 +18,7 @@ sem_deinit(struct sem *s) {
 }
 
 static inline int
-sem_acquire(struct sem *s, int inf) {
+sem_wait(struct sem *s, int inf) {
 	// ignore inf, always wait inf
 	cond_wait_begin(&s->c);
 	cond_wait(&s->c);
@@ -28,7 +28,7 @@ sem_acquire(struct sem *s, int inf) {
 }
 
 static inline void
-sem_release(struct sem *s) {
+sem_post(struct sem *s) {
 	cond_trigger_begin(&s->c);
 	cond_trigger_end(&s->c, 1);
 }

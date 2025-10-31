@@ -79,7 +79,7 @@ mainthread_current(struct mainthread_session *mt, service_id id) {
 
 static inline void
 mainthread_trigger(struct mainthread_session *mt) {
-	sem_release(&mt->ev);
+	sem_post(&mt->ev);
 }
 
 struct ltask {
@@ -1156,7 +1156,7 @@ lmainthread_wait(lua_State *L) {
 	int inf = !lua_toboolean(L, 1);
 	int finish = 0;
 	do {
-		if (sem_acquire(&mt->ev, inf)) {
+		if (sem_wait(&mt->ev, inf)) {
 			lua_pushboolean(L, 1);	// fail
 			return 1;
 		}
