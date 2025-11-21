@@ -33,6 +33,7 @@ LUAMOD_API int luaopen_ltask_bootstrap(lua_State *L);
 LUAMOD_API int luaopen_ltask_root(lua_State *L);
 
 #define THREAD_NONE -1
+#define THREAD_MAINTHREAD -2
 #define THREAD_WORKER(n) (n)
 
 #ifndef DEBUGLOG
@@ -53,6 +54,7 @@ LUAMOD_API int luaopen_ltask_root(lua_State *L);
 
 struct mainthread_session {
 	atomic_int srv;
+	atomic_int ready;
 	struct sem ev;
 	int status;
 };
@@ -60,6 +62,7 @@ struct mainthread_session {
 static void
 mainthread_init(struct mainthread_session *mt) {
 	atomic_int_init(&mt->srv, 0);
+	atomic_int_init(&mt->ready, 0);
 	mt->status = MAINTHREAD_STATUS_NONE;
 	sem_init(&mt->ev);
 }
@@ -68,6 +71,7 @@ static void
 mainthread_deinit(struct mainthread_session *mt) {
 	assert(mt->status == MAINTHREAD_STATUS_NONE || mt->status == MAINTHREAD_STATUS_YIELD);
 	atomic_int_store(&mt->srv, 0);
+	atomic_int_store(&mt->ready, 0);
 	mt->status = MAINTHREAD_STATUS_INVALID;
 	sem_deinit(&mt->ev);
 }
@@ -471,35 +475,43 @@ dispatch_external_messages(struct ltask *task) {
 
 static void
 schedule_dispatch(struct ltask *task) {
-	// Step 0 : dispatch external messsages
+	// Step 0 : check mainthread service id
+	struct mainthread_session * mt = &task->mt;
+	service_id id = { atomic_int_load(&mt->ready) };
+	if (id.id != 0) {
+		atomic_int_store(&mt->ready, 0);
+		schedule_back(task, id);
+	}
+
+	// Step 1 : dispatch external messsages
 
 	if (task->external_message) {
 		dispatch_external_messages(task);
 	}
 
-	// Step 1 : Collect service_done
+	// Step 2 : Collect service_done
 	service_id jobs[MAX_WORKER];
 
 	int done_job_n = collect_done_job(task, jobs);
 
-	// Step 2: Dispatch out message by service_done
+	// Step 3: Dispatch out message by service_done
 	dispath_out_messages(task, jobs, done_job_n);
 
-	// Step 3: get pending jobs
+	// Step 4: get pending jobs
 	int job_n = get_pending_jobs(task, jobs);
 
-	// Step 4: Assign queue task
+	// Step 5: Assign queue task
 	int free_slot = count_freeslot(task);
 
 	assert(free_slot >= job_n);
 
-	// Step 5: Assign task to workers
+	// Step 6: Assign task to workers
 	int prepare_n = prepare_task(task, jobs, free_slot - job_n, job_n);
 
-	// Step 6
+	// Step 7
 	assign_prepare_task(task, jobs, prepare_n);
 
-	// Step 7
+	// Step 8
 	trigger_blocked_workers(task);
 }
 
@@ -527,6 +539,20 @@ release_scheduler(struct worker_thread * worker) {
 #else
 	debug_printf(worker->logger, "Release schedule");
 #endif
+}
+
+static int
+acquire_scheduler_mainthread(struct ltask *task) {
+	if (atomic_int_cas(&task->schedule_owner, THREAD_NONE, THREAD_MAINTHREAD)) {
+		return 0;
+	}
+	return 1;
+}
+
+static void
+release_scheduler_mainthread(struct ltask *task) {
+	assert(atomic_int_load(&task->schedule_owner) == THREAD_MAINTHREAD);
+	atomic_int_store(&task->schedule_owner, THREAD_NONE);
 }
 
 static service_id
@@ -1146,6 +1172,18 @@ ltask_log_sender(lua_State *L) {
 
 // run service in mainthread
 
+static void
+mainthread_service_back(struct ltask *task, service_id id) {
+	struct mainthread_session * mt = &task->mt;
+	atomic_int_store(&mt->ready, id.id);
+	while (atomic_int_load(&mt->ready) == id.id) {
+		if (!acquire_scheduler_mainthread(task)) {
+			schedule_dispatch(task);
+			release_scheduler_mainthread(task);
+		}
+	}
+}
+
 static int
 lmainthread_wait(lua_State *L) {
 	struct ltask *task = (struct ltask *)get_ptr(L, "LTASK_GLOBAL");
@@ -1191,11 +1229,11 @@ lmainthread_wait(lua_State *L) {
 				if (id.id != SERVICE_ID_ROOT) {
 					service_send_signal(P, id);
 				}
-				schedule_back(task, id);
+				mainthread_service_back(task, id);
 				return luaL_error(L, "Can't yield in mainthread (status = %d), kill service (%d)", mt->status, id.id);
 			}
 		}
-		schedule_back(task, id);
+		mainthread_service_back(task, id);
 		mt->status = MAINTHREAD_STATUS_NONE;
 	} while (!finish);
 	atomic_int_store(&mt->srv, 0);
