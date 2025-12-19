@@ -12,7 +12,7 @@ local MESSAGE_SCHEDULE_DEL <const> = 1
 
 local RECEIPT_ERROR <const> = 2
 local RECEIPT_BLOCK <const> = 3
-local RECEIPT_RESPONCE <const> = 4
+local RECEIPT_RESPONSE <const> = 4
 
 local S = {}
 
@@ -117,7 +117,7 @@ end
 
 local function spawn(t)
 	local type, address = ltask.post_message(SERVICE_SYSTEM, 0, MESSAGE_SCHEDULE_NEW)
-	if type ~= RECEIPT_RESPONCE then
+	if type ~= RECEIPT_RESPONSE then
 		-- RECEIPT_ERROR
 		error("send MESSAGE_SCHEDULE_NEW failed.")
 	end
@@ -244,7 +244,7 @@ local function del_service(address)
 		for i=1, #msg, 2 do
 			local addr = msg[i]
 			local session = msg[i+1]
-			ltask.rasie_error(addr, session, err)
+			ltask.raise_error(addr, session, err)
 		end
 	end
 end

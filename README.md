@@ -5,7 +5,7 @@ ltask is inspired by skynet (https://github.com/cloudwu/skynet) , but it's a lib
 
 It implement an n:m scheduler , so that you can run M lua VMs on N OS threads.
 
-Each lua service (an indepentent lua VM) works in request/response mode, they use message channels to inter-communicate.
+Each lua service (an independent lua VM) works in request/response mode, they use message channels to inter-communicate.
 
 `root` is a special service that can spawn new services. For example, 
 

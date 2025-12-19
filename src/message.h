@@ -17,7 +17,7 @@ typedef unsigned int session_t;
 #define MESSAGE_RECEIPT_DONE 1
 #define MESSAGE_RECEIPT_ERROR 2
 #define MESSAGE_RECEIPT_BLOCK 3
-#define MESSAGE_RECEIPT_RESPONCE 4
+#define MESSAGE_RECEIPT_RESPONSE 4
 
 // If to == 0, it's a schedule message. It should be post from root service (1).
 // type is MESSAGE_SCHEDULE_* from is the parameter (for DEL service_id).

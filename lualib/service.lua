@@ -288,7 +288,7 @@ local function post_response_message(addr, session, type, msg, sz)
 	end
 end
 
-function ltask.rasie_error(addr, session, message)
+function ltask.raise_error(addr, session, message)
 	if session == SESSION_SEND_MESSAGE then
 		return
 	end
@@ -702,7 +702,7 @@ function ltask.quit()
 	ltask.fork(function ()
 		for co, addr in pairs(session_coroutine_address) do
 			local session = session_coroutine_response[co]
-			ltask.rasie_error(addr, session, "Service has been quit.")
+			ltask.raise_error(addr, session, "Service has been quit.")
 		end
 		quit = true
 	end)

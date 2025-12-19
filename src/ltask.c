@@ -150,7 +150,7 @@ dispatch_schedule_message(struct ltask *task, service_id id, struct message *msg
 		if (msg->to.id == 0) {
 			service_write_receipt(P, id, MESSAGE_RECEIPT_ERROR, msg);
 		} else {
-			service_write_receipt(P, id, MESSAGE_RECEIPT_RESPONCE, msg);
+			service_write_receipt(P, id, MESSAGE_RECEIPT_RESPONSE, msg);
 		}
 		break;
 	case MESSAGE_SCHEDULE_DEL:
@@ -222,7 +222,7 @@ collect_done_job(struct ltask *task, service_id done_job[]) {
 }
 
 static void
-dispath_out_messages(struct ltask *task, const service_id done_job[], int done_job_n) {
+dispatch_out_messages(struct ltask *task, const service_id done_job[], int done_job_n) {
 	struct service_pool *P = task->services;
 	int i;
 
@@ -483,7 +483,7 @@ schedule_dispatch(struct ltask *task) {
 		schedule_back(task, id);
 	}
 
-	// Step 1 : dispatch external messsages
+	// Step 1 : dispatch external messages
 
 	if (task->external_message) {
 		dispatch_external_messages(task);
@@ -495,7 +495,7 @@ schedule_dispatch(struct ltask *task) {
 	int done_job_n = collect_done_job(task, jobs);
 
 	// Step 3: Dispatch out message by service_done
-	dispath_out_messages(task, jobs, done_job_n);
+	dispatch_out_messages(task, jobs, done_job_n);
 
 	// Step 4: get pending jobs
 	int job_n = get_pending_jobs(task, jobs);
@@ -857,7 +857,7 @@ ltask_init(lua_State *L) {
 static void *
 get_ptr(lua_State *L, const char *key) {
 	if (lua_getfield(L, LUA_REGISTRYINDEX, key) == LUA_TNIL) {
-		luaL_error(L, "%s is absense", key);
+		luaL_error(L, "%s is absence", key);
 		return NULL;
 	}
 	void * v = lua_touserdata(L, -1);
@@ -984,10 +984,10 @@ ltask_deinit(lua_State *L) {
 
 	int i;
 	for (i=0;i<task->config->worker;i++) {
-		worker_destory(&task->workers[i]);
+		worker_destroy(&task->workers[i]);
 	}
 
-	service_destory(task->services);
+	service_destroy(task->services);
 	queue_delete(task->schedule);
 	timer_destroy(task->timer);
 
@@ -1419,7 +1419,7 @@ lmessage_receipt(lua_State *L) {
 	lua_pushinteger(L, receipt);
 	if (m == NULL)
 		return 1;
-	if (receipt == MESSAGE_RECEIPT_RESPONCE) {
+	if (receipt == MESSAGE_RECEIPT_RESPONSE) {
 		// Only for schedule message NEW
 		lua_pushinteger(L, m->to.id);
 		message_delete(m);
