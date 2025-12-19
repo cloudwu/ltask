@@ -103,7 +103,7 @@ worker_quit(struct worker_thread *w) {
 }
 
 static inline void
-worker_destory(struct worker_thread *worker) {
+worker_destroy(struct worker_thread *worker) {
 	cond_release(&worker->trigger);
 }
 
@@ -131,7 +131,7 @@ worker_assign_job(struct worker_thread *worker, service_id id) {
 			if (q->head == q->tail)
 				q->head = q->tail = 0;
 		}
-		// only one producer (Woker) except itself (worker_steal_job), so don't need use CAS to set
+		// only one producer (Worker) except itself (worker_steal_job), so don't need use CAS to set
 		worker->service_ready = id.id;
 		return id;
 	} else {

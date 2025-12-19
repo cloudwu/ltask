@@ -113,7 +113,7 @@ free_service(struct service *S) {
 }
 
 void
-service_destory(struct service_pool *p) {
+service_destroy(struct service_pool *p) {
 	if (p == NULL)
 		return;
 	int i;

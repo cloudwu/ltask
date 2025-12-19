@@ -26,7 +26,7 @@ typedef struct {
 } service_id;
 
 struct service_pool * service_create(struct ltask_config *config);
-void service_destory(struct service_pool *p);
+void service_destroy(struct service_pool *p);
 service_id service_new(struct service_pool *p, unsigned int id);
 // 0 succ
 int service_init(struct service_pool *p, service_id id, void *ud, size_t sz, void *pL);
