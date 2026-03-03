@@ -84,8 +84,14 @@ thread_start(struct thread * threads, int n, int usemainthread) {
 static inline void
 thread_join(void *handle, int n) {
 	HANDLE *thread_handle = (HANDLE *)handle;
-	WaitForMultipleObjects(n, thread_handle, TRUE, INFINITE);
 	int i;
+	for (i = 0; i < n; i += MAXIMUM_WAIT_OBJECTS) {
+		int size = n - i;
+		if (size > MAXIMUM_WAIT_OBJECTS) {
+			size = MAXIMUM_WAIT_OBJECTS;
+		}
+		WaitForMultipleObjects(size, &thread_handle[i], TRUE, INFINITE);
+	}
 	for (i=0;i<n;i++) {
 		CloseHandle(thread_handle[i]);
 	}
