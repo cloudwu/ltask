@@ -890,7 +890,7 @@ end
 local function request(command, ...)
 	local s = service[command]
 	if not s then
-		error("Unknown request message : " .. command)
+		error("Unknown request message : " .. tostring(command))
 		return
 	end
 	send_response(s(...))
