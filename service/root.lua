@@ -14,6 +14,8 @@ local RECEIPT_ERROR <const> = 2
 local RECEIPT_BLOCK <const> = 3
 local RECEIPT_RESPONSE <const> = 4
 
+local EXIT_CODE_ERROR <const> = 1
+
 local S = {}
 
 local anonymous_services = {}
@@ -42,6 +44,7 @@ do
 		if type == MESSAGE_ERROR then
 			ltask.log.error("Root fatal:", table.concat(errobj, "\n"))
 			writelog()
+			root.set_exit_code(EXIT_CODE_ERROR)
 			root_quit()
 		end
 	end
