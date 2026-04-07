@@ -849,6 +849,7 @@ ltask_init(lua_State *L) {
 	}
 
 	task->blocked_service = 0;
+	task->exit_code = 0;
 	
 	mainthread_init(&task->mt);
 
