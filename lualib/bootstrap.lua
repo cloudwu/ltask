@@ -32,8 +32,11 @@ local function start(config)
 end
 
 local function wait(ctx)
-	boot.wait(ctx)
+	local exitcode = boot.wait(ctx)
 	boot.deinit()
+	if exitcode ~= 0 then
+		os.exit(exitcode, true)
+	end
 end
 
 return {

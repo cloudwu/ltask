@@ -106,6 +106,7 @@ struct ltask {
 	atomic_int thread_count;
 	int blocked_service;		// binding service may block
 	FILE *logfile;
+	int exit_code;			// process exit code, set by root service
 };
 
 struct service_ud {
@@ -974,8 +975,10 @@ ltask_wait(lua_State *L) {
 	}
 	message_delete(ctx->task->external_last_message);
 	queue_delete(ctx->task->external_message);
+	int exit_code = ctx->task->exit_code;
 	mainthread_deinit(&ctx->task->mt);
-	return 0;
+	lua_pushinteger(L, exit_code);
+	return 1;
 }
 
 static int
@@ -1735,6 +1738,14 @@ lmainthread_yield(lua_State *L) {
 	return mainthread_change_status(L, MAINTHREAD_STATUS_YIELD);
 }
 
+static int
+ltask_set_exit_code(lua_State *L) {
+	const struct service_ud *S = getS(L);
+	int code = (int)luaL_checkinteger(L, 1);
+	S->task->exit_code = code;
+	return 0;
+}
+
 LUAMOD_API int
 luaopen_ltask(lua_State *L) {
 	luaL_checkversion(L);
@@ -1881,6 +1892,7 @@ luaopen_ltask_root(lua_State *L) {
 	luaL_Reg l[] = {
 		{ "init_service", ltask_initservice },
 		{ "close_service", ltask_closeservice },
+		{ "set_exit_code", ltask_set_exit_code },
 		{ NULL, NULL },
 	};
 	
