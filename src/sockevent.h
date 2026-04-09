@@ -95,6 +95,7 @@ sockevent_open(struct sockevent *e) {
 #else
 	if (e->pipe[0] != socket_invalid)
 		return 0;
+#if defined(_WIN32)
 	socket_t fd = socket(AF_INET6, SOCK_STREAM, 0);
 	if (fd == socket_invalid)
 		goto _error;
@@ -123,6 +124,15 @@ sockevent_open(struct sockevent *e) {
 	e->pipe[0] = accept(fd, (struct sockaddr *)&loopback, &addrlen);
 	if (e->pipe[0] == socket_invalid)
 		goto _error;
+#else
+	int ok = socketpair(PF_UNIX, SOCK_STREAM, 0, e->pipe);
+	if (ok != 0)
+		goto _error;
+	if (none_blocking_(e->pipe[0]) < 0)
+		goto _error;
+	if (none_blocking_(e->pipe[1]) < 0)
+		goto _error;
+#endif
 
 #ifdef SO_NOSIGPIPE
 	const int enable = 1;
@@ -142,12 +152,16 @@ sockevent_open(struct sockevent *e) {
 
 	atomic_int_init(&e->e, 0);
 
+#if defined(_WIN32)
 	closesocket(fd);
+#endif
 
 	return 0;
 _error:
+#if defined(_WIN32)
 	if (fd == socket_invalid)
 		closesocket(fd);
+#endif
 	sockevent_close(e);
 	return -1;
 #endif
