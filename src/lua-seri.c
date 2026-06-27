@@ -100,6 +100,7 @@ blk_alloc(void) {
 static inline void
 wb_push(struct write_block *b, const void *buf, int sz) {
 	const char * buffer = buf;
+	if (sz <= 0) return;
 	if (b->ptr >= BLOCK_SIZE) {
 _again:
 		b->current = b->current->next = blk_alloc();
