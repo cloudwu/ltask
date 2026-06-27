@@ -37,6 +37,11 @@ static const socket_t socket_invalid = -1;
 
 #define closesocket close
 
+static inline int
+none_blocking_(socket_t fd) {
+	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+}
+
 static inline void sockevent_initsocket() {}
 
 #endif
