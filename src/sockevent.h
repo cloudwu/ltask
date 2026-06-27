@@ -19,12 +19,6 @@
 typedef SOCKET socket_t;
 static const socket_t socket_invalid = INVALID_SOCKET;
 
-static inline int
-none_blocking_(socket_t fd) {
-	unsigned long on = 1;
-	return ioctlsocket(fd, FIONBIO, &on);
-}
-
 static inline void
 sockevent_initsocket() {
 	WSADATA wsaData;
@@ -42,11 +36,6 @@ typedef int socket_t;
 static const socket_t socket_invalid = -1;
 
 #define closesocket close
-
-static inline int
-none_blocking_(socket_t fd) {
-	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-}
 
 static inline void sockevent_initsocket() {}
 
@@ -96,16 +85,17 @@ sockevent_open(struct sockevent *e) {
 	if (e->pipe[0] != socket_invalid)
 		return 0;
 #if defined(_WIN32)
-	socket_t fd = socket(AF_INET6, SOCK_STREAM, 0);
+	// ipv6 loopback may be disabled, so use ipv4
+	socket_t fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd == socket_invalid)
 		goto _error;
 	e->pipe[0] = socket_invalid;
 	e->pipe[1] = socket_invalid;
-	struct sockaddr_in6 loopback;
+	struct sockaddr_in loopback;
 	memset(&loopback, 0, sizeof(loopback));
-	loopback.sin6_family = AF_INET6;
-	loopback.sin6_addr = in6addr_loopback;
-	loopback.sin6_port = 0;
+	loopback.sin_family = AF_INET;
+	loopback.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	loopback.sin_port = htons(0);
 	if (bind(fd, (const struct sockaddr *)&loopback, sizeof(loopback)) < 0)
 		goto _error;
 	socklen_t addrlen = sizeof(loopback);
@@ -113,10 +103,8 @@ sockevent_open(struct sockevent *e) {
 		goto _error;
 	if (listen(fd, 32) < 0)
 		goto _error;
-	e->pipe[1] = socket(AF_INET6, SOCK_STREAM, 0);
+	e->pipe[1] = socket(AF_INET, SOCK_STREAM, 0);
 	if (e->pipe[1] < 0)
-		goto _error;
-	if (none_blocking_(e->pipe[1]) < 0)
 		goto _error;
 
 	connect(e->pipe[1], (const struct sockaddr *)&loopback, sizeof(loopback));
