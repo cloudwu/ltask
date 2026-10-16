@@ -234,8 +234,10 @@ local function del_service(address)
 	if anonymous_services[address] then
 		anonymous_services[address] = nil
 	else
-		for _, name in ipairs(named_services) do
+		for i, name in ipairs(named_services) do
 			if named_services[name] == address then
+				named_services[name] = nil
+				table.remove(named_services, i)
 				break
 			end
 		end
@@ -254,17 +256,24 @@ end
 
 function S.quit_ltask()
 	ltask.signal_handler(del_service)
-	for i = #named_services, 1, -1 do
-		local name = named_services[i]
+	local snapshot = {}
+	for i = 1, #named_services do
+		snapshot[i] = named_services[i]
+	end
+	for i = #snapshot, 1, -1 do
+		local name = snapshot[i]
 		local address = named_services[name]
-		local ok, err = pcall(ltask.syscall, address, "quit")
-		if not ok then
-			print(string.format("named service %s(%d) quit error: %s.", name, address, err))
+		if address then
+			local ok, err = pcall(ltask.syscall, address, "quit")
+			if not ok then
+				print(string.format("named service %s(%d) quit error: %s.", name, address, err))
+			end
 		end
 	end
 	writelog()
 	root_quit()
 end
+
 
 do -- external message handler
 	local external_forwarding, external_name
