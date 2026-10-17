@@ -239,7 +239,9 @@ dispatch_out_messages(struct ltask *task, const service_id done_job[], int done_
 				debug_printf(task->logger, "Signal %x dead to root", id.id);
 				check_message_to(task, msg->to);
 				break;
-			case 1 :
+			case 1 : 
+				// s->out was just taken; put the signal back and retry.
+				service_send_message(P, id, msg);
 				debug_printf(task->logger, "Root service is blocked, Service %x tries to signal it later", id.id);
 				schedule_back(task, id);
 				break;
