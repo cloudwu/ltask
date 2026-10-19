@@ -60,7 +60,7 @@ local function send_retry_queue(addr, queue)
 	for i = 1, n do
 		local type = ltask.post_message(addr, table.unpack(queue[i]))
 		if type == RECEIPT_BLOCK then
-			table.move(queue, i, n, 1)
+			table.move(queue, i, n+i-1, 1)
 			return true
 		elseif type == RECEIPT_ERROR then
 			for j = i, n do

@@ -36,7 +36,7 @@ local function send_blocked_queue(addr, queue)
 	local n = #queue
 	for i = 1, n do
 		if ltask.post_message(addr, queue[i], MESSAGE_RESPONSE) == RECEIPT_BLOCK then
-			table.move(queue, i, n, 1)
+			table.move(queue, i, n+i-1, 1)
 			return true
 		end
 	end
